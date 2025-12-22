@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Selector</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="file://VENDOR_PATH/css/leaflet.css"/>
+    <!-- Leaflet Draw CSS -->
+    <link rel="stylesheet" href="file://VENDOR_PATH/css/leaflet.draw.css"/>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+        .layer-selector {
+            position: absolute;
+            top: 10px;
+            left: 60px;
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+        }
+        .layer-selector label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #333;
+        }
+        .layer-selector select {
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 13px;
+            cursor: pointer;
+            min-width: 150px;
+        }
+        .draw-instructions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 1000;
+        }
+        .draw-instructions strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .draw-instructions p {
+            margin: 0;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- Layer Selector -->
+    <div class="layer-selector">
+        <label for="layer-select">Preview Layer</label>
+        <select id="layer-select">
+            LAYER_OPTIONS
+        </select>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="file://VENDOR_PATH/js/leaflet.js"></script>
+    <!-- Leaflet Draw JS -->
+    <script src="file://VENDOR_PATH/js/leaflet.draw.js"></script>
+    <!-- QWebChannel for Qt communication -->
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+
+    <script>
+        // Initialize map
+        var map = L.map('map').setView([MAP_LAT, MAP_LON], MAP_ZOOM);
+
+        // Current tile layer
+        var currentTileLayer = L.tileLayer('TILE_URL', {
+            attribution: '&copy; GSI Japan',
+            maxZoom: 18,
+            minZoom: 2
+        }).addTo(map);
+
+        // Layer data
+        var layerData = LAYER_DATA;
+
+        // Handle layer change
+        document.getElementById('layer-select').addEventListener('change', function(e) {
+            var layerName = e.target.value;
+            var layer = layerData[layerName];
+
+            if (layer) {
+                // Remove current layer
+                map.removeLayer(currentTileLayer);
+
+                // Add new layer
+                currentTileLayer = L.tileLayer(layer.url, {
+                    attribution: '&copy; GSI Japan',
+                    maxZoom: layer.max_zoom,
+                    minZoom: layer.min_zoom
+                }).addTo(map);
+            }
+        });
+
+        // Add drawing controls
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        var drawControl = new L.Control.Draw({
+            draw: {
+                polyline: false,
+                polygon: false,
+                circle: false,
+                marker: false,
+                circlemarker: false,
+                rectangle: {
+                    shapeOptions: {
+                        color: '#3388ff',
+                        fillColor: '#3388ff',
+                        fillOpacity: 0.2,
+                        weight: 3
+                    }
+                }
+            },
+            edit: {
+                featureGroup: drawnItems,
+                edit: false,
+                remove: false
+            }
+        });
+        map.addControl(drawControl);
+
+        // Add custom clear button
+        L.Control.ClearExtent = L.Control.extend({
+            options: {
+                position: 'topleft'
+            },
+            onAdd: function(map) {
+                var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+                var button = L.DomUtil.create('a', 'leaflet-control-clear', container);
+                button.href = '#';
+                button.title = 'Clear extent';
+                button.innerHTML = '🗑️';
+                button.style.fontSize = '18px';
+                button.style.lineHeight = '26px';
+                button.style.width = '26px';
+                button.style.height = '26px';
+                button.style.textAlign = 'center';
+
+                L.DomEvent.on(button, 'click', function(e) {
+                    L.DomEvent.stopPropagation(e);
+                    L.DomEvent.preventDefault(e);
+
+                    // Clear all drawn items
+                    drawnItems.clearLayers();
+
+                    // Show instructions again
+                    var instructions = document.getElementById('instructions');
+                    if (instructions) {
+                        instructions.style.display = 'block';
+                    }
+
+                    // Notify Qt that extent was cleared
+                    if (bridge) {
+                        bridge.clear_extent();
+                    }
+                });
+
+                return container;
+            }
+        });
+
+        map.addControl(new L.Control.ClearExtent());
+
+        // Add instructions
+        var instructionsDiv = document.createElement('div');
+        instructionsDiv.className = 'draw-instructions';
+        instructionsDiv.id = 'instructions';
+        instructionsDiv.innerHTML = '<strong>📍 Select Area</strong><p>Click the rectangle tool (⬜) then drag on the map to select your area.</p>';
+        document.body.appendChild(instructionsDiv);
+
+        // Setup Qt WebChannel communication
+        var bridge;
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            bridge = channel.objects.bridge;
+        });
+
+        // Handle draw events
+        map.on(L.Draw.Event.CREATED, function(e) {
+            var layer = e.layer;
+            // Clear any existing extent (single extent only)
+            drawnItems.clearLayers();
+            drawnItems.addLayer(layer);
+
+            var bounds = layer.getBounds();
+
+            // Hide instructions
+            var instructions = document.getElementById('instructions');
+            if (instructions) {
+                instructions.style.display = 'none';
+            }
+
+            // Send extent to Qt
+            if (bridge) {
+                bridge.set_extent(
+                    bounds.getSouth(),
+                    bounds.getNorth(),
+                    bounds.getWest(),
+                    bounds.getEast()
+                );
+            }
+        });
+    </script>
+</body>
+</html>

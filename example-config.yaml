@@ -1,0 +1,54 @@
+# Example configuration file for Google Earth Tile Generator
+#
+# Usage:
+#   google-earth-tiles download example-config.yaml
+#
+# Or with verbose output:
+#   google-earth-tiles download example-config.yaml -v
+#
+# To list available layers:
+#   google-earth-tiles list-layers
+
+# Geographic extent (bounding box in WGS84 coordinates)
+# This example covers a small area in Hokkaido, Japan
+# Coordinates correspond to: https://www.google.com/maps/@43.6693912,142.858222,12.49z
+extent:
+  min_lon: 142.858  # West boundary
+  min_lat: 43.669   # South boundary
+  max_lon: 142.862  # East boundary
+  max_lat: 43.671   # North boundary
+
+# Zoom level (tile resolution)
+# Higher zoom = more detail but more tiles to download
+#
+# Valid ranges by layer:
+#   std (Standard Map):    2-18
+#   pale (Pale Map):       2-18
+#   ort (Aerial Photos):   2-18
+#   blank (Blank Map):     5-14
+#   english (English Map): 5-8
+#
+# When multiple layers are selected, the valid range is the intersection.
+# If zoom is outside the valid range, it will be automatically clamped.
+#
+# Example zoom levels:
+#   2-8:   Country/regional scale
+#   9-12:  City scale
+#   13-15: Neighborhood scale
+#   16-18: Street/building scale
+zoom: 14
+
+# Output KMZ file path
+output: output/hokkaido-tiles.kmz
+
+# Layers to include (can specify one or more)
+# Available options: std, pale, blank, english, ort
+#
+# Single layer example:
+layers:
+  - std
+
+# Multiple layers example (uncomment to use):
+# layers:
+#   - std  # Standard map with roads and labels
+#   - ort  # Aerial satellite imagery
