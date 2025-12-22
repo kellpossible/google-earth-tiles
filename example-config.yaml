@@ -22,11 +22,12 @@ extent:
 # Higher zoom = more detail but more tiles to download
 #
 # Valid ranges by layer:
-#   std (Standard Map):    2-18
-#   pale (Pale Map):       2-18
-#   ort (Aerial Photos):   2-18
-#   blank (Blank Map):     5-14
-#   english (English Map): 5-8
+#   std (Standard Map):              2-18
+#   pale (Pale Map):                 2-18
+#   english (English Map):           5-8
+#   ort (Orthographic Aerial):       2-18
+#   relief (Color-Coded Elevation):  5-15
+#   seamlessphoto (Seamless Aerial): 2-18
 #
 # When multiple layers are selected, the valid range is the intersection.
 # If zoom is outside the valid range, it will be automatically clamped.
@@ -42,13 +43,22 @@ zoom: 14
 output: output/hokkaido-tiles.kmz
 
 # Layers to include (can specify one or more)
-# Available options: std, pale, blank, english, ort
+# Available options: std, pale, english, ort, relief, seamlessphoto
 #
-# Single layer example:
+# Simple format - single layer with default settings (100% opacity, normal blend):
 layers:
   - std
 
-# Multiple layers example (uncomment to use):
+# Multiple layers example with defaults (uncomment to use):
 # layers:
-#   - std  # Standard map with roads and labels
-#   - ort  # Aerial satellite imagery
+#   - std    # Standard map with roads and labels
+#   - ort    # Orthographic aerial photos
+#
+# Extended format with composition settings (uncomment to use):
+# layers:
+#   - name: ort                # Aerial photos as base
+#     opacity: 100             # 0-100 (default: 100)
+#     blend_mode: normal       # normal|multiply|screen|overlay (default: normal)
+#   - name: std                # Standard map overlay
+#     opacity: 70              # Semi-transparent overlay
+#     blend_mode: multiply     # Blend with base layer

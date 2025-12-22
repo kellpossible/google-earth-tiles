@@ -17,6 +17,9 @@ class LayerConfig:
     min_zoom: int
     max_zoom: int
     description: str
+    japanese_name: str
+    full_description: str
+    info_url: str
     custom_url_template: Optional[str] = None
 
     @property
@@ -38,7 +41,13 @@ LAYERS: Dict[str, LayerConfig] = {
         extension='png',
         min_zoom=2,
         max_zoom=18,
-        description='Standard map with roads and labels'
+        description='Standard map with roads and labels',
+        japanese_name='標準地図',
+        full_description='Electronic topographic map with standard cartographic styling. '
+                         'Shows detailed road networks, building outlines, geographic labels, '
+                         'elevation contours, and administrative boundaries. Suitable for general '
+                         'reference mapping across Japan and surrounding regions.',
+        info_url='https://maps.gsi.go.jp/development/ichiran.html'
     ),
     'pale': LayerConfig(
         name='pale',
@@ -46,7 +55,13 @@ LAYERS: Dict[str, LayerConfig] = {
         extension='png',
         min_zoom=2,
         max_zoom=18,
-        description='Pale colored base map'
+        description='Pale colored base map',
+        japanese_name='淡色地図',
+        full_description='Lighter-toned version of the standard map designed specifically for use as '
+                         'a background layer beneath thematic overlays. The reduced color intensity '
+                         'allows custom data visualizations to stand out while maintaining essential '
+                         'geographic context.',
+        info_url='https://maps.gsi.go.jp/development/ichiran.html'
     ),
     'english': LayerConfig(
         name='english',
@@ -54,23 +69,40 @@ LAYERS: Dict[str, LayerConfig] = {
         extension='png',
         min_zoom=5,
         max_zoom=8,
-        description='Map with English labels'
+        description='Map with English labels',
+        japanese_name='English',
+        full_description='International map of Japan with English labeling for place names, features, '
+                         'and geographic regions. Designed for international reference, tourism '
+                         'applications, and global users requiring romanized toponymy.',
+        info_url='https://maps.gsi.go.jp/development/ichiran.html'
     ),
     'ort': LayerConfig(
         name='ort',
-        display_name='Aerial Photos',
+        display_name='Orthographic Aerial Photos',
         extension='jpg',
         min_zoom=2,
         max_zoom=18,
-        description='Aerial/satellite imagery'
+        description='Corrected aerial photography',
+        japanese_name='電子国土基本図（オルソ画像）',
+        full_description='Geometrically corrected aerial photographs captured from 2007 onwards. '
+                         'These orthophotos provide high-precision geospatial reference imagery '
+                         'suitable for accurate measurement, analysis, and overlay with other datasets. '
+                         'Updated regularly to reflect current ground conditions.',
+        info_url='https://maps.gsi.go.jp/development/ichiran.html'
     ),
     'relief': LayerConfig(
         name='relief',
-        display_name='Relief Map',
+        display_name='Color-Coded Elevation Map',
         extension='png',
         min_zoom=5,
         max_zoom=15,
-        description='Relief map with hillshade'
+        description='Elevation shown through color gradation',
+        japanese_name='色別標高図',
+        full_description='Topographic visualization displaying elevation through color gradation and '
+                         'shading effects. Higher elevations appear in warmer colors while lower areas '
+                         'use cooler tones, making terrain features and landforms immediately apparent. '
+                         'Useful for understanding regional topography and terrain characteristics.',
+        info_url='https://maps.gsi.go.jp/development/ichiran.html'
     ),
     'seamlessphoto': LayerConfig(
         name='seamlessphoto',
@@ -78,7 +110,13 @@ LAYERS: Dict[str, LayerConfig] = {
         extension='jpg',
         min_zoom=2,
         max_zoom=18,
-        description='Seamless aerial/satellite imagery'
+        description='Composite recent aerial imagery',
+        japanese_name='シームレス空中写真',
+        full_description='Composite aerial imagery created by seamlessly combining the most recent '
+                         'photographs from various sources maintained by the Geospatial Information '
+                         'Authority of Japan. Provides nationwide coverage showing current ground '
+                         'conditions, land use patterns, and development status.',
+        info_url='https://maps.gsi.go.jp/development/ichiran.html'
     ),
 }
 

@@ -22,32 +22,6 @@
             left: 0;
             right: 0;
         }
-        .layer-selector {
-            position: absolute;
-            top: 10px;
-            left: 60px;
-            background: white;
-            padding: 8px;
-            border-radius: 4px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            font-family: Arial, sans-serif;
-            z-index: 1000;
-        }
-        .layer-selector label {
-            display: block;
-            margin-bottom: 4px;
-            font-size: 12px;
-            font-weight: bold;
-            color: #333;
-        }
-        .layer-selector select {
-            padding: 4px 8px;
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            font-size: 13px;
-            cursor: pointer;
-            min-width: 150px;
-        }
         .draw-instructions {
             position: absolute;
             top: 10px;
@@ -75,14 +49,6 @@
 <body>
     <div id="map"></div>
 
-    <!-- Layer Selector -->
-    <div class="layer-selector">
-        <label for="layer-select">Preview Layer</label>
-        <select id="layer-select">
-            LAYER_OPTIONS
-        </select>
-    </div>
-
     <!-- Leaflet JS -->
     <script src="file://VENDOR_PATH/js/leaflet.js"></script>
     <!-- Leaflet Draw JS -->
@@ -94,33 +60,17 @@
         // Initialize map
         var map = L.map('map').setView([MAP_LAT, MAP_LON], MAP_ZOOM);
 
-        // Current tile layer
-        var currentTileLayer = L.tileLayer('TILE_URL', {
+        // Single composite tile layer using preview:// scheme
+        var tileLayer = L.tileLayer('preview://tile/{z}/{x}/{y}.png', {
             attribution: '&copy; GSI Japan',
             maxZoom: 18,
             minZoom: 2
         }).addTo(map);
 
-        // Layer data
-        var layerData = LAYER_DATA;
-
-        // Handle layer change
-        document.getElementById('layer-select').addEventListener('change', function(e) {
-            var layerName = e.target.value;
-            var layer = layerData[layerName];
-
-            if (layer) {
-                // Remove current layer
-                map.removeLayer(currentTileLayer);
-
-                // Add new layer
-                currentTileLayer = L.tileLayer(layer.url, {
-                    attribution: '&copy; GSI Japan',
-                    maxZoom: layer.max_zoom,
-                    minZoom: layer.min_zoom
-                }).addTo(map);
-            }
-        });
+        // Function to refresh tiles (called when composition changes)
+        function refreshTiles() {
+            tileLayer.redraw();
+        }
 
         // Add drawing controls
         var drawnItems = new L.FeatureGroup();

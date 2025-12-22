@@ -15,6 +15,7 @@ from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import TileCalculator
 from src.core.wmts_client import WMTSClient
 from src.models.extent import Extent
+from src.models.layer_composition import LayerComposition
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +71,28 @@ def validate_config(config: Dict) -> None:
         raise ValueError("Layers must be a non-empty list")
 
     for layer in config['layers']:
-        if layer not in LAYERS:
-            raise ValueError(
-                f"Invalid layer: {layer}. "
-                f"Valid layers: {', '.join(LAYERS.keys())}"
-            )
+        # Support both simple string format and dict format
+        if isinstance(layer, str):
+            if layer not in LAYERS:
+                raise ValueError(
+                    f"Invalid layer: {layer}. "
+                    f"Valid layers: {', '.join(LAYERS.keys())}"
+                )
+        elif isinstance(layer, dict):
+            if 'name' not in layer:
+                raise ValueError("Layer dict must have 'name' field")
+            if layer['name'] not in LAYERS:
+                raise ValueError(
+                    f"Invalid layer: {layer['name']}. "
+                    f"Valid layers: {', '.join(LAYERS.keys())}"
+                )
+            # Validate optional fields
+            if 'opacity' in layer and not (0 <= layer['opacity'] <= 100):
+                raise ValueError(f"Opacity must be between 0 and 100, got {layer['opacity']}")
+            if 'blend_mode' in layer and layer['blend_mode'] not in ['normal', 'multiply', 'screen', 'overlay']:
+                raise ValueError(f"Invalid blend_mode: {layer['blend_mode']}")
+        else:
+            raise ValueError("Layer must be a string or dict")
 
     # Validate zoom
     if not isinstance(config['zoom'], int):
@@ -189,10 +207,32 @@ def run_cli(config_path: str) -> int:
 
         zoom = config['zoom']
         output_path = Path(config['output'])
-        layer_names = config['layers']
+        layer_specs = config['layers']
 
-        # Get layer configs
-        layers = [LAYERS[name] for name in layer_names]
+        # Parse layer specifications (support both string and dict formats)
+        layer_compositions = []
+        layers = []
+
+        for spec in layer_specs:
+            if isinstance(spec, str):
+                # Simple format: just layer name
+                layer_config = LAYERS[spec]
+                composition = LayerComposition(
+                    layer_config=layer_config,
+                    opacity=100,  # Default
+                    blend_mode='normal'  # Default
+                )
+            else:
+                # Extended format: dict with name, optional opacity and blend_mode
+                layer_config = LAYERS[spec['name']]
+                composition = LayerComposition(
+                    layer_config=layer_config,
+                    opacity=spec.get('opacity', 100),  # Default to 100
+                    blend_mode=spec.get('blend_mode', 'normal')  # Default to 'normal'
+                )
+
+            layer_compositions.append(composition)
+            layers.append(layer_config)
 
         # Validate zoom range for selected layers
         min_zoom = max(layer.min_zoom for layer in layers)
@@ -221,6 +261,9 @@ def run_cli(config_path: str) -> int:
         )
         total_tiles = tile_count * len(layers)
 
+        # Build layer names for display
+        layer_names = [comp.layer_config.name for comp in layer_compositions]
+
         logger.info(f"Configuration:")
         logger.info(f"  Layers: {', '.join(layer_names)}")
         logger.info(f"  Zoom: {zoom}")
@@ -236,7 +279,7 @@ def run_cli(config_path: str) -> int:
         # Generate KMZ
         logger.info("Generating KMZ file...")
         generator = KMZGenerator(output_path)
-        result_path = generator.create_kmz(layer_tiles_dict, zoom)
+        result_path = generator.create_kmz(layer_tiles_dict, zoom, layer_compositions)
 
         # Cleanup temp files
         logger.info("Cleaning up temporary files...")

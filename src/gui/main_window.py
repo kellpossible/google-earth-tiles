@@ -24,6 +24,7 @@ from src.core.wmts_client import WMTSClient
 from src.gui.map_widget import MapWidget
 from src.gui.settings_panel import SettingsPanel
 from src.models.extent import Extent
+from src.models.layer_composition import LayerComposition
 
 logger = logging.getLogger(__name__)
 
@@ -190,9 +191,18 @@ class MainWindow(QMainWindow):
         self.map_widget.extent_cleared.connect(self.settings_panel.clear_extent)
         self.settings_panel.generate_requested.connect(self.on_generate_clicked)
 
+        # Connect layer composition changes to map preview
+        for layer_widget in self.settings_panel.layer_widgets:
+            layer_widget.changed.connect(self._update_map_preview)
+
+    def _update_map_preview(self):
+        """Update the map preview when layer composition changes."""
+        layer_compositions = self.settings_panel.get_layer_compositions()
+        self.map_widget.update_layer_composition(layer_compositions)
+
     def on_generate_clicked(
         self,
-        layers: List[LayerConfig],
+        layer_compositions: List[LayerComposition],
         zoom: int,
         extent: Extent,
         output_path: str
@@ -201,7 +211,7 @@ class MainWindow(QMainWindow):
         Handle generate button click.
 
         Args:
-            layers: Selected layers
+            layer_compositions: List of LayerComposition objects
             zoom: Zoom level
             extent: Geographic extent
             output_path: Output KMZ path
@@ -228,6 +238,9 @@ class MainWindow(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
+        # Extract just the layer configs for download
+        layers = [comp.layer_config for comp in layer_compositions]
+
         # Calculate total tiles
         tile_count = TileCalculator.estimate_tile_count(
             extent.min_lon, extent.min_lat,
@@ -250,11 +263,11 @@ class MainWindow(QMainWindow):
                 return
 
         # Start download
-        self.start_download(layers, extent, zoom, output_path)
+        self.start_download(layer_compositions, extent, zoom, output_path)
 
     def start_download(
         self,
-        layers: List[LayerConfig],
+        layer_compositions: List[LayerComposition],
         extent: Extent,
         zoom: int,
         output_path: str
@@ -263,11 +276,14 @@ class MainWindow(QMainWindow):
         Start downloading tiles.
 
         Args:
-            layers: Layers to download
+            layer_compositions: List of LayerComposition objects
             extent: Geographic extent
             zoom: Zoom level
             output_path: Output KMZ path
         """
+        # Extract layers for download
+        layers = [comp.layer_config for comp in layer_compositions]
+
         # Disable generate button
         self.settings_panel.generate_button.setEnabled(False)
 
@@ -275,8 +291,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
 
-        # Store output path for later
-        self.pending_kmz_data = (zoom, output_path)
+        # Store output path and compositions for later
+        self.pending_kmz_data = (zoom, output_path, layer_compositions)
 
         # Create and start worker
         self.download_worker = DownloadWorker(layers, extent, zoom)
@@ -305,14 +321,14 @@ class MainWindow(QMainWindow):
         Args:
             layer_tiles_dict: Downloaded tiles by layer
         """
-        zoom, output_path = self.pending_kmz_data
+        zoom, output_path, layer_compositions = self.pending_kmz_data
 
         self.status_bar.showMessage("Generating KMZ file...")
 
         try:
-            # Generate KMZ
+            # Generate KMZ (TODO: Update to use layer_compositions for blending/opacity)
             generator = KMZGenerator(Path(output_path))
-            result_path = generator.create_kmz(layer_tiles_dict, zoom)
+            result_path = generator.create_kmz(layer_tiles_dict, zoom, layer_compositions)
 
             # Cleanup temp files
             for layer, tiles in layer_tiles_dict.items():

@@ -83,9 +83,18 @@ def main():
     # If no subcommand provided, launch GUI
     if args.command is None:
         import signal
-        from PyQt6.QtCore import QTimer
+        from PyQt6.QtCore import QTimer, QByteArray
         from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtWebEngineCore import QWebEngineUrlScheme
         from src.gui.main_window import MainWindow
+
+        # Register custom URL scheme BEFORE creating QApplication
+        scheme = QWebEngineUrlScheme(QByteArray(b'preview'))
+        scheme.setFlags(
+            QWebEngineUrlScheme.Flag.LocalScheme |
+            QWebEngineUrlScheme.Flag.LocalAccessAllowed
+        )
+        QWebEngineUrlScheme.registerScheme(scheme)
 
         app = QApplication(sys.argv)
         app.setApplicationName("Google Earth Tile Generator")

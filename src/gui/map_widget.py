@@ -2,17 +2,22 @@
 
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
-from PyQt6.QtCore import pyqtSignal, pyqtSlot, QUrl
+from PyQt6.QtCore import pyqtSignal, pyqtSlot, QUrl, QObject
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineSettings
-from PyQt6.QtCore import QObject
+from PyQt6.QtWebEngineCore import (
+    QWebEngineSettings,
+    QWebEngineProfile,
+    QWebEngineUrlScheme
+)
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
-from src.core.config import DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, LAYERS
+from src.core.config import DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, LAYERS, LayerConfig
 from src.models.extent import Extent
+from src.models.layer_composition import LayerComposition
+from src.gui.tile_compositor import PreviewTileSchemeHandler
 
 # Get absolute paths
 VENDOR_DIR = Path(__file__).parent.parent.parent / "resources" / "vendor"
@@ -50,14 +55,20 @@ class MapWidget(QWidget):
     extent_changed = pyqtSignal(object)  # Extent object
     extent_cleared = pyqtSignal()  # Emitted when extent is cleared
 
+    # Class variable for URL scheme handler
+    _scheme_handler = None
+
     def __init__(self):
         """Initialize map widget."""
         super().__init__()
-        self.current_layer = 'std'
         self.current_zoom = DEFAULT_MAP_ZOOM
         self.bridge = MapBridge()
         self.bridge.extent_changed.connect(self._on_extent_received)
         self.bridge.extent_cleared.connect(self._on_extent_cleared)
+
+        # Initialize scheme handler if not already done
+        if MapWidget._scheme_handler is None:
+            MapWidget._scheme_handler = PreviewTileSchemeHandler()
 
         self.init_ui()
 
@@ -68,6 +79,10 @@ class MapWidget(QWidget):
 
         # Create web view
         self.web_view = QWebEngineView()
+
+        # Install custom URL scheme handler
+        profile = self.web_view.page().profile()
+        profile.installUrlSchemeHandler(b'preview', MapWidget._scheme_handler)
 
         # Configure web settings
         settings = self.web_view.page().settings()
@@ -87,54 +102,36 @@ class MapWidget(QWidget):
         # Create and load initial map
         self.create_map()
 
-    def create_map(self, layer_name: Optional[str] = None, zoom: Optional[int] = None):
+    def create_map(self, layer_compositions: Optional[List[LayerComposition]] = None, zoom: Optional[int] = None):
         """
         Create map and load it in the web view.
 
         Args:
-            layer_name: Layer to display (default: current_layer)
+            layer_compositions: List of LayerComposition objects
             zoom: Zoom level (default: current_zoom)
         """
-        if layer_name:
-            self.current_layer = layer_name
         if zoom:
             self.current_zoom = zoom
 
-        layer_config = LAYERS.get(self.current_layer, LAYERS['std'])
+        # Set layer compositions in scheme handler
+        if layer_compositions:
+            MapWidget._scheme_handler.set_layer_compositions(layer_compositions)
+        else:
+            # Default: show standard map at 100% opacity
+            std_layer = LAYERS['std']
+            MapWidget._scheme_handler.set_layer_compositions([
+                LayerComposition(layer_config=std_layer, opacity=100, blend_mode='normal')
+            ])
 
         # Load template
         with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
             template = f.read()
-
-        # Build layer options HTML
-        layer_options = []
-        for name, config in LAYERS.items():
-            selected = 'selected' if name == self.current_layer else ''
-            layer_options.append(
-                f'<option value="{name}" {selected}>{config.display_name}</option>'
-            )
-        layer_options_html = '\n            '.join(layer_options)
-
-        # Build layer data JSON
-        import json
-        layer_data = {}
-        for name, config in LAYERS.items():
-            layer_data[name] = {
-                'url': config.url_template,
-                'min_zoom': config.min_zoom,
-                'max_zoom': config.max_zoom,
-                'display_name': config.display_name
-            }
-        layer_data_json = json.dumps(layer_data)
 
         # Replace placeholders
         html = template.replace('VENDOR_PATH', str(VENDOR_DIR))
         html = html.replace('MAP_LAT', str(DEFAULT_MAP_CENTER[0]))
         html = html.replace('MAP_LON', str(DEFAULT_MAP_CENTER[1]))
         html = html.replace('MAP_ZOOM', str(self.current_zoom))
-        html = html.replace('TILE_URL', layer_config.url_template)
-        html = html.replace('LAYER_OPTIONS', layer_options_html)
-        html = html.replace('LAYER_DATA', layer_data_json)
 
         # Save to temp file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
@@ -144,15 +141,18 @@ class MapWidget(QWidget):
         # Load the map
         self.web_view.setUrl(QUrl.fromLocalFile(temp_path))
 
-    def update_tile_preview(self, layer_name: str, zoom: int):
+    def update_layer_composition(self, layer_compositions: List[LayerComposition]):
         """
-        Update the map with a different layer or zoom.
+        Update the map layers with new composition settings.
 
         Args:
-            layer_name: Layer to display
-            zoom: Zoom level
+            layer_compositions: List of LayerComposition objects
         """
-        self.create_map(layer_name, zoom)
+        # Update the scheme handler with new compositions
+        MapWidget._scheme_handler.set_layer_compositions(layer_compositions)
+
+        # Force tile layer to refresh by calling JavaScript
+        self.web_view.page().runJavaScript("if (typeof refreshTiles === 'function') refreshTiles();")
 
     def _on_extent_received(self, south: float, north: float, west: float, east: float):
         """
