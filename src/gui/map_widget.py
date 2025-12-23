@@ -29,6 +29,7 @@ class MapBridge(QObject):
 
     extent_changed = pyqtSignal(float, float, float, float)  # south, north, west, east
     extent_cleared = pyqtSignal()  # Emitted when extent is deleted
+    zoom_changed = pyqtSignal(int)  # Emitted when preview zoom changes
 
     @pyqtSlot(float, float, float, float)
     def set_extent(self, south: float, north: float, west: float, east: float):
@@ -48,12 +49,23 @@ class MapBridge(QObject):
         """Receive notification that extent was cleared."""
         self.extent_cleared.emit()
 
+    @pyqtSlot(int)
+    def on_zoom_changed(self, zoom: int):
+        """
+        Receive zoom change from JavaScript.
+
+        Args:
+            zoom: Current zoom level
+        """
+        self.zoom_changed.emit(zoom)
+
 
 class MapWidget(QWidget):
     """Widget displaying an interactive map for extent selection."""
 
     extent_changed = pyqtSignal(object)  # Extent object
     extent_cleared = pyqtSignal()  # Emitted when extent is cleared
+    preview_zoom_changed = pyqtSignal(int)  # Emitted when preview zoom changes
 
     # Class variable for URL scheme handler
     _scheme_handler = None
@@ -65,6 +77,7 @@ class MapWidget(QWidget):
         self.bridge = MapBridge()
         self.bridge.extent_changed.connect(self._on_extent_received)
         self.bridge.extent_cleared.connect(self._on_extent_cleared)
+        self.bridge.zoom_changed.connect(self._on_zoom_changed)
 
         # Initialize scheme handler if not already done
         if MapWidget._scheme_handler is None:
@@ -117,11 +130,8 @@ class MapWidget(QWidget):
         if layer_compositions:
             MapWidget._scheme_handler.set_layer_compositions(layer_compositions)
         else:
-            # Default: show standard map at 100% opacity
-            std_layer = LAYERS['std']
-            MapWidget._scheme_handler.set_layer_compositions([
-                LayerComposition(layer_config=std_layer, opacity=100, blend_mode='normal')
-            ])
+            # No layers: show blank/transparent tiles
+            MapWidget._scheme_handler.set_layer_compositions([])
 
         # Load template
         with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
@@ -141,18 +151,44 @@ class MapWidget(QWidget):
         # Load the map
         self.web_view.setUrl(QUrl.fromLocalFile(temp_path))
 
-    def update_layer_composition(self, layer_compositions: List[LayerComposition]):
+    def update_map_zoom_limits(self, layer_compositions: List[LayerComposition]):
+        """
+        Update map zoom limits to union of enabled layers.
+
+        Args:
+            layer_compositions: List of LayerComposition objects
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        if not layer_compositions:
+            min_zoom, max_zoom = 2, 18
+        else:
+            # Union (not intersection) - allow best detail from any layer
+            min_zoom = min(comp.layer_config.min_zoom for comp in layer_compositions)
+            max_zoom = max(comp.layer_config.max_zoom for comp in layer_compositions)
+
+        js_code = f"if (typeof updateZoomLimits === 'function') {{ updateZoomLimits({min_zoom}, {max_zoom}); }}"
+        self.web_view.page().runJavaScript(js_code)
+        logger.info(f"Updated map zoom limits: {min_zoom}-{max_zoom}")
+
+    def update_layer_composition(self, layer_compositions: List[LayerComposition], update_zoom_limits: bool = True):
         """
         Update the map layers with new composition settings.
 
         Args:
             layer_compositions: List of LayerComposition objects
+            update_zoom_limits: Whether to update zoom limits (only needed when layers change)
         """
         # Update the scheme handler with new compositions
         MapWidget._scheme_handler.set_layer_compositions(layer_compositions)
 
-        # Force tile layer to refresh by calling JavaScript
-        self.web_view.page().runJavaScript("if (typeof refreshTiles === 'function') refreshTiles();")
+        if update_zoom_limits:
+            # Update zoom limits and refresh tiles (updateZoomLimits calls refreshTiles internally)
+            self.update_map_zoom_limits(layer_compositions)
+        else:
+            # Just refresh tiles without changing zoom limits
+            self.web_view.page().runJavaScript("if (typeof refreshTiles === 'function') { refreshTiles(); }")
 
     def _on_extent_received(self, south: float, north: float, west: float, east: float):
         """
@@ -177,6 +213,25 @@ class MapWidget(QWidget):
     def _on_extent_cleared(self):
         """Handle extent cleared from JavaScript."""
         self.extent_cleared.emit()
+
+    def _on_zoom_changed(self, zoom: int):
+        """
+        Handle zoom change from JavaScript.
+
+        Args:
+            zoom: New zoom level
+        """
+        self.current_zoom = zoom
+        self.preview_zoom_changed.emit(zoom)
+
+    def set_preview_zoom(self, zoom: int):
+        """
+        Set the preview map zoom level.
+
+        Args:
+            zoom: Zoom level to set
+        """
+        self.web_view.page().runJavaScript(f"if (typeof setPreviewZoom === 'function') {{ setPreviewZoom({zoom}); }}")
 
     def get_selected_extent(self) -> Optional[Extent]:
         """

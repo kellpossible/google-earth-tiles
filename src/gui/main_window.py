@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
@@ -150,6 +150,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.download_worker = None
         self.pending_kmz_data = None
+
+        # Debounce timer for map updates (prevents rapid refreshes during slider drag)
+        self.map_update_timer = QTimer()
+        self.map_update_timer.setSingleShot(True)
+        self.map_update_timer.timeout.connect(self._do_map_update_no_zoom)
+        self.map_refresh_in_progress = False
+        self.pending_refresh_needed = False
+
         self.init_ui()
 
     def init_ui(self):
@@ -189,16 +197,54 @@ class MainWindow(QMainWindow):
         # Connect signals
         self.map_widget.extent_changed.connect(self.settings_panel.update_extent)
         self.map_widget.extent_cleared.connect(self.settings_panel.clear_extent)
+        self.map_widget.preview_zoom_changed.connect(self.settings_panel.update_preview_zoom)
         self.settings_panel.generate_requested.connect(self.on_generate_clicked)
+        self.settings_panel.sync_preview_zoom_requested.connect(self.map_widget.set_preview_zoom)
 
         # Connect layer composition changes to map preview
-        for layer_widget in self.settings_panel.layer_widgets:
-            layer_widget.changed.connect(self._update_map_preview)
+        # (Individual layer widget signals are connected when layers are added)
+        self.settings_panel.changed.connect(self._update_map_preview)
+        self.settings_panel.settings_changed_no_zoom.connect(self._update_map_preview_no_zoom)
+
+        # Trigger initial map update with default layer
+        self._update_map_preview()
 
     def _update_map_preview(self):
-        """Update the map preview when layer composition changes."""
+        """Update the map preview when layer list changes (with zoom limit update)."""
         layer_compositions = self.settings_panel.get_layer_compositions()
-        self.map_widget.update_layer_composition(layer_compositions)
+        self.map_widget.update_layer_composition(layer_compositions, update_zoom_limits=True)
+
+    def _update_map_preview_no_zoom(self):
+        """Update the map preview when layer settings change (debounced to avoid race conditions)."""
+        # Restart the timer - if user is still dragging, this delays the update
+        # Only after 500ms of no changes will the update actually happen
+        self.map_update_timer.stop()
+        self.map_update_timer.start(500)  # 500ms debounce - increased to reduce load during slider dragging
+
+    def _do_map_update_no_zoom(self):
+        """Actually perform the map update (called after debounce timer expires)."""
+        # Guard against concurrent refreshes
+        if self.map_refresh_in_progress:
+            self.pending_refresh_needed = True
+            return
+
+        self.map_refresh_in_progress = True
+
+        layer_compositions = self.settings_panel.get_layer_compositions()
+        self.map_widget.update_layer_composition(layer_compositions, update_zoom_limits=False)
+
+        # Mark refresh as complete immediately - the debounce timer handles rate limiting
+        # Tiles will load asynchronously in the background
+        QTimer.singleShot(100, self._on_refresh_complete)
+
+    def _on_refresh_complete(self):
+        """Called after a refresh has had time to complete."""
+        self.map_refresh_in_progress = False
+
+        # If another refresh was requested while we were busy, do it now
+        if self.pending_refresh_needed:
+            self.pending_refresh_needed = False
+            self._do_map_update_no_zoom()
 
     def on_generate_clicked(
         self,

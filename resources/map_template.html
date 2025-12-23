@@ -67,9 +67,52 @@
             minZoom: 2
         }).addTo(map);
 
+        // Current zoom limits
+        var currentMinZoom = 2;
+        var currentMaxZoom = 18;
+
         // Function to refresh tiles (called when composition changes)
         function refreshTiles() {
-            tileLayer.redraw();
+            // Remove the tile layer
+            map.removeLayer(tileLayer);
+
+            // Create a new tile layer with a cache-busting parameter and current zoom limits
+            var timestamp = new Date().getTime();
+            tileLayer = L.tileLayer('preview://tile/{z}/{x}/{y}.png?t=' + timestamp, {
+                attribution: '&copy; GSI Japan',
+                maxZoom: currentMaxZoom,
+                minZoom: currentMinZoom
+            }).addTo(map);
+        }
+
+        // Function to update zoom limits dynamically
+        function updateZoomLimits(minZoom, maxZoom) {
+            console.log('Updating zoom limits to:', minZoom, '-', maxZoom);
+
+            // Store new zoom limits
+            currentMinZoom = minZoom;
+            currentMaxZoom = maxZoom;
+
+            // Update map zoom limits
+            map.options.minZoom = minZoom;
+            map.options.maxZoom = maxZoom;
+
+            // Clamp current zoom if needed
+            var currentZoom = map.getZoom();
+            if (currentZoom < minZoom) {
+                map.setZoom(minZoom);
+            } else if (currentZoom > maxZoom) {
+                map.setZoom(maxZoom);
+            }
+
+            // Refresh tiles with new limits
+            refreshTiles();
+        }
+
+        // Function to set preview zoom level (called from Python)
+        function setPreviewZoom(zoom) {
+            console.log('Setting preview zoom to:', zoom);
+            map.setZoom(zoom);
         }
 
         // Add drawing controls
@@ -153,6 +196,18 @@
         var bridge;
         new QWebChannel(qt.webChannelTransport, function(channel) {
             bridge = channel.objects.bridge;
+
+            // Send initial zoom level
+            if (bridge) {
+                bridge.on_zoom_changed(map.getZoom());
+            }
+        });
+
+        // Track zoom changes
+        map.on('zoomend', function() {
+            if (bridge) {
+                bridge.on_zoom_changed(map.getZoom());
+            }
         });
 
         // Handle draw events

@@ -3,10 +3,13 @@
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
+from PyQt6.QtGui import QPixmap, QIcon
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -14,6 +17,8 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -23,7 +28,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core.config import DEFAULT_ZOOM, LAYERS, LayerConfig
+from src.core.config import DEFAULT_ZOOM, LAYERS, CATEGORIES, LayerConfig
 from src.core.tile_calculator import TileCalculator
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
@@ -44,6 +49,7 @@ class LayerItemWidget(QFrame):
     moved_up = pyqtSignal()
     moved_down = pyqtSignal()
     changed = pyqtSignal()
+    remove_requested = pyqtSignal()  # Emitted when user clicks remove button
 
     def __init__(self, layer_config: LayerConfig, parent=None):
         """Initialize layer item widget.
@@ -61,13 +67,8 @@ class LayerItemWidget(QFrame):
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Top row: checkbox, name, info button
+        # Top row: name, info button, remove button
         top_row = QHBoxLayout()
-
-        self.enabled_checkbox = QCheckBox()
-        self.enabled_checkbox.setChecked(False)
-        self.enabled_checkbox.stateChanged.connect(self.changed.emit)
-        top_row.addWidget(self.enabled_checkbox)
 
         name_label = QLabel(f"{self.layer_config.display_name}")
         name_label.setStyleSheet("font-weight: bold;")
@@ -79,15 +80,20 @@ class LayerItemWidget(QFrame):
         self.info_button.clicked.connect(self.show_info)
         top_row.addWidget(self.info_button)
 
+        self.remove_button = QPushButton("✕")
+        self.remove_button.setFixedSize(24, 24)
+        self.remove_button.setToolTip("Remove layer")
+        self.remove_button.clicked.connect(self.remove_requested.emit)
+        top_row.addWidget(self.remove_button)
+
         layout.addLayout(top_row)
 
-        # Controls row: opacity, blend mode, up/down buttons
-        controls_layout = QHBoxLayout()
-        controls_layout.setContentsMargins(20, 0, 0, 0)  # Indent controls
+        # Opacity row
+        opacity_layout = QHBoxLayout()
+        opacity_layout.setContentsMargins(20, 0, 0, 0)  # Indent controls
 
-        # Opacity slider
         opacity_label = QLabel("Opacity:")
-        controls_layout.addWidget(opacity_label)
+        opacity_layout.addWidget(opacity_label)
 
         self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self.opacity_slider.setMinimum(0)
@@ -95,46 +101,65 @@ class LayerItemWidget(QFrame):
         self.opacity_slider.setValue(100)
         self.opacity_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.opacity_slider.setTickInterval(25)
-        self.opacity_slider.valueChanged.connect(self._update_opacity_label)
-        self.opacity_slider.valueChanged.connect(self.changed.emit)
-        controls_layout.addWidget(self.opacity_slider, 2)
+        self.opacity_slider.valueChanged.connect(self._sync_opacity_spinbox)
+        opacity_layout.addWidget(self.opacity_slider, 1)
 
-        self.opacity_value_label = QLabel("100%")
-        self.opacity_value_label.setMinimumWidth(40)
-        controls_layout.addWidget(self.opacity_value_label)
+        self.opacity_spinbox = QSpinBox()
+        self.opacity_spinbox.setMinimum(0)
+        self.opacity_spinbox.setMaximum(100)
+        self.opacity_spinbox.setValue(100)
+        self.opacity_spinbox.setSuffix("%")
+        self.opacity_spinbox.setFixedWidth(70)
+        self.opacity_spinbox.valueChanged.connect(self._sync_opacity_slider)
+        opacity_layout.addWidget(self.opacity_spinbox)
 
-        # Blend mode
+        layout.addLayout(opacity_layout)
+
+        # Blend mode and move buttons row
+        blend_layout = QHBoxLayout()
+        blend_layout.setContentsMargins(20, 0, 0, 0)  # Indent controls
+
         blend_label = QLabel("Blend:")
-        controls_layout.addWidget(blend_label)
+        blend_layout.addWidget(blend_label)
 
         self.blend_combo = QComboBox()
         for display_name, value in BLEND_MODES:
             self.blend_combo.addItem(display_name, value)
         self.blend_combo.currentIndexChanged.connect(self.changed.emit)
-        controls_layout.addWidget(self.blend_combo)
+        blend_layout.addWidget(self.blend_combo, 1)
 
         # Up/Down buttons
         self.up_button = QPushButton("↑")
         self.up_button.setFixedSize(24, 24)
         self.up_button.setToolTip("Move layer up")
         self.up_button.clicked.connect(self.moved_up.emit)
-        controls_layout.addWidget(self.up_button)
+        blend_layout.addWidget(self.up_button)
 
         self.down_button = QPushButton("↓")
         self.down_button.setFixedSize(24, 24)
         self.down_button.setToolTip("Move layer down")
         self.down_button.clicked.connect(self.moved_down.emit)
-        controls_layout.addWidget(self.down_button)
+        blend_layout.addWidget(self.down_button)
 
-        layout.addLayout(controls_layout)
+        layout.addLayout(blend_layout)
 
         self.setLayout(layout)
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
         self.setStyleSheet("LayerItemWidget { border: 1px solid #ccc; border-radius: 4px; }")
 
-    def _update_opacity_label(self, value: int):
-        """Update opacity label with current value."""
-        self.opacity_value_label.setText(f"{value}%")
+    def _sync_opacity_spinbox(self, value: int):
+        """Sync spinbox when slider changes."""
+        self.opacity_spinbox.blockSignals(True)
+        self.opacity_spinbox.setValue(value)
+        self.opacity_spinbox.blockSignals(False)
+        self.changed.emit()
+
+    def _sync_opacity_slider(self, value: int):
+        """Sync slider when spinbox changes."""
+        self.opacity_slider.blockSignals(True)
+        self.opacity_slider.setValue(value)
+        self.opacity_slider.blockSignals(False)
+        self.changed.emit()
 
     def show_info(self):
         """Show information dialog for this layer."""
@@ -158,29 +183,138 @@ class LayerItemWidget(QFrame):
         dialog.setIcon(QMessageBox.Icon.Information)
         dialog.exec()
 
-    def is_enabled(self) -> bool:
-        """Check if layer is enabled."""
-        return self.enabled_checkbox.isChecked()
-
     def get_opacity(self) -> int:
         """Get opacity value (0-100)."""
-        return self.opacity_slider.value()
+        return self.opacity_spinbox.value()
 
     def get_blend_mode(self) -> str:
         """Get selected blend mode value."""
         return self.blend_combo.currentData()
 
 
+class AddLayerDialog(QDialog):
+    """Dialog for selecting a layer to add."""
+
+    def __init__(self, available_layers: List[LayerConfig], parent=None):
+        """
+        Initialize the add layer dialog.
+
+        Args:
+            available_layers: List of layer configs that can be added
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Add Layer")
+        self.selected_layer: Optional[LayerConfig] = None
+        self.all_available_layers = available_layers
+
+        # Get preview images directory
+        self.preview_dir = Path(__file__).parent.parent.parent / "resources" / "previews"
+
+        layout = QVBoxLayout()
+
+        # Instructions
+        label = QLabel("Select a layer to add:")
+        layout.addWidget(label)
+
+        # Category filter
+        filter_layout = QHBoxLayout()
+        filter_label = QLabel("Category:")
+        filter_layout.addWidget(filter_label)
+
+        self.category_combo = QComboBox()
+        self.category_combo.addItem("All Categories", "all")
+        for cat_id, category in sorted(CATEGORIES.items(), key=lambda x: x[1].name_en):
+            self.category_combo.addItem(f"{category.name_en} ({category.name_ja})", cat_id)
+        self.category_combo.currentIndexChanged.connect(self._on_category_changed)
+        filter_layout.addWidget(self.category_combo, 1)
+
+        layout.addLayout(filter_layout)
+
+        # List of available layers
+        self.layer_list = QListWidget()
+        self.layer_list.setIconSize(QSize(80, 80))  # Set icon size for previews
+        self.layer_list.setSpacing(5)
+
+        # Populate with all layers initially
+        self._populate_layer_list(available_layers)
+
+        self.layer_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self.layer_list)
+
+        # Dialog buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self.setLayout(layout)
+        self.resize(500, 500)  # Larger size to accommodate preview images
+
+    def _populate_layer_list(self, layers: List[LayerConfig]):
+        """Populate the layer list with given layers."""
+        self.layer_list.clear()
+
+        for layer_config in layers:
+            item = QListWidgetItem(f"{layer_config.display_name}\n{layer_config.japanese_name}")
+            item.setData(Qt.ItemDataRole.UserRole, layer_config)
+
+            # Load preview image
+            preview_path = self.preview_dir / f"{layer_config.name}.{layer_config.extension}"
+            if preview_path.exists():
+                pixmap = QPixmap(str(preview_path))
+                # Scale to fit icon size while maintaining aspect ratio
+                scaled_pixmap = pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio,
+                                               Qt.TransformationMode.SmoothTransformation)
+                item.setIcon(QIcon(scaled_pixmap))
+
+            self.layer_list.addItem(item)
+
+    def _on_category_changed(self, index: int):
+        """Handle category filter change."""
+        category_id = self.category_combo.currentData()
+
+        if category_id == "all":
+            # Show all layers
+            filtered_layers = self.all_available_layers
+        else:
+            # Filter by category
+            filtered_layers = [layer for layer in self.all_available_layers if layer.category == category_id]
+
+        self._populate_layer_list(filtered_layers)
+
+    def _on_item_double_clicked(self, item: QListWidgetItem):
+        """Handle double-click on item - accept dialog."""
+        self.accept()
+
+    def accept(self):
+        """Accept dialog and store selected layer."""
+        current_item = self.layer_list.currentItem()
+        if current_item:
+            self.selected_layer = current_item.data(Qt.ItemDataRole.UserRole)
+            super().accept()
+
+    def get_selected_layer(self) -> Optional[LayerConfig]:
+        """Get the selected layer config."""
+        return self.selected_layer
+
+
 class SettingsPanel(QWidget):
     """Panel for configuring download settings."""
 
     generate_requested = pyqtSignal(list, int, object, str)  # List[LayerComposition], zoom, extent, output_path
+    changed = pyqtSignal()  # Emitted when layer list changes (add/remove/reorder) - updates zoom limits
+    settings_changed_no_zoom = pyqtSignal()  # Emitted when layer settings change (opacity/blend) - no zoom update
+    sync_preview_zoom_requested = pyqtSignal(int)  # Emitted when user wants to sync preview zoom to output zoom
 
     def __init__(self):
         """Initialize settings panel."""
         super().__init__()
         self.current_extent: Optional[Extent] = None
         self.layer_widgets: List[LayerItemWidget] = []
+        self.current_preview_zoom: Optional[int] = None
         self.init_ui()
 
     def init_ui(self):
@@ -191,6 +325,11 @@ class SettingsPanel(QWidget):
         layer_group = QGroupBox("Layer Composition")
         layer_layout = QVBoxLayout()
 
+        # Add Layer button
+        add_layer_button = QPushButton("Add Layer")
+        add_layer_button.clicked.connect(self._on_add_layer_clicked)
+        layer_layout.addWidget(add_layer_button)
+
         # Scroll area for layer widgets
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -199,13 +338,6 @@ class SettingsPanel(QWidget):
         scroll_widget = QWidget()
         self.layers_container_layout = QVBoxLayout()
         self.layers_container_layout.setSpacing(5)
-
-        # Create layer item widgets (connect signals later after UI is fully initialized)
-        for layer_key, layer_config in LAYERS.items():
-            layer_widget = LayerItemWidget(layer_config)
-            self.layer_widgets.append(layer_widget)
-            self.layers_container_layout.addWidget(layer_widget)
-
         self.layers_container_layout.addStretch()
         scroll_widget.setLayout(self.layers_container_layout)
         scroll_area.setWidget(scroll_widget)
@@ -218,15 +350,33 @@ class SettingsPanel(QWidget):
         zoom_group = QGroupBox("Zoom Level")
         zoom_layout = QFormLayout()
 
+        # Output zoom
+        output_zoom_row = QHBoxLayout()
         self.zoom_spinner = QSpinBox()
         self.zoom_spinner.setMinimum(2)
         self.zoom_spinner.setMaximum(18)
         self.zoom_spinner.setValue(DEFAULT_ZOOM)
         self.zoom_spinner.valueChanged.connect(self._on_zoom_changed)
+        output_zoom_row.addWidget(self.zoom_spinner)
+        output_zoom_row.addStretch()
 
-        zoom_layout.addRow("Zoom:", self.zoom_spinner)
+        zoom_layout.addRow("Output Zoom:", output_zoom_row)
         self.zoom_range_label = QLabel("Range: 2-18")
         zoom_layout.addRow("", self.zoom_range_label)
+
+        # Preview zoom display
+        preview_zoom_row = QHBoxLayout()
+        self.preview_zoom_label = QLabel("-")
+        preview_zoom_row.addWidget(self.preview_zoom_label)
+
+        self.sync_zoom_button = QPushButton("↻ Sync to Output")
+        self.sync_zoom_button.setVisible(False)
+        self.sync_zoom_button.setToolTip("Set preview zoom to match output zoom")
+        self.sync_zoom_button.clicked.connect(self._on_sync_zoom_clicked)
+        preview_zoom_row.addWidget(self.sync_zoom_button)
+        preview_zoom_row.addStretch()
+
+        zoom_layout.addRow("Preview Zoom:", preview_zoom_row)
 
         zoom_group.setLayout(zoom_layout)
         layout.addWidget(zoom_group)
@@ -293,23 +443,21 @@ class SettingsPanel(QWidget):
 
         self.setLayout(layout)
 
-        # Connect layer widget signals after all UI elements are created
-        for layer_widget in self.layer_widgets:
-            layer_widget.moved_up.connect(lambda w=layer_widget: self._move_layer_up(w))
-            layer_widget.moved_down.connect(lambda w=layer_widget: self._move_layer_down(w))
-            layer_widget.changed.connect(self._on_layer_changed)
-
-        # Enable first layer by default (after signals are connected)
-        if self.layer_widgets:
-            self.layer_widgets[0].enabled_checkbox.setChecked(True)
-
+        # Start with standard layer by default
+        self.add_layer(LAYERS['std'])
         self._update_zoom_range()
 
     def _on_layer_changed(self):
-        """Handle layer composition change."""
+        """Handle layer list change (add/remove/reorder) - updates zoom limits."""
         self._update_zoom_range()
+        self.changed.emit()  # Trigger map preview update WITH zoom limit update
         self._update_estimates()
         self._update_move_buttons()
+
+    def _on_layer_settings_changed(self):
+        """Handle layer settings change (opacity/blend) - no zoom limit update needed."""
+        self._update_estimates()
+        self.settings_changed_no_zoom.emit()
 
     def _move_layer_up(self, widget: LayerItemWidget):
         """Move layer up in the composition order."""
@@ -347,9 +495,97 @@ class SettingsPanel(QWidget):
             widget.up_button.setEnabled(i > 0)
             widget.down_button.setEnabled(i < len(self.layer_widgets) - 1)
 
+    def _on_add_layer_clicked(self):
+        """Handle Add Layer button click."""
+        # Get list of layers not currently added
+        added_layer_names = {w.layer_config.name for w in self.layer_widgets}
+        available_layers = [config for name, config in LAYERS.items()
+                           if name not in added_layer_names]
+
+        if not available_layers:
+            QMessageBox.information(self, "No Layers Available",
+                                   "All available layers have already been added.")
+            return
+
+        # Show dialog to select layer
+        dialog = AddLayerDialog(available_layers, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_layer = dialog.get_selected_layer()
+            if selected_layer:
+                self.add_layer(selected_layer)
+
+    def add_layer(self, layer_config: LayerConfig):
+        """
+        Add a new layer to the composition.
+
+        Args:
+            layer_config: Layer configuration to add
+        """
+        # Create layer widget
+        layer_widget = LayerItemWidget(layer_config)
+
+        # Connect signals
+        layer_widget.moved_up.connect(lambda w=layer_widget: self._move_layer_up(w))
+        layer_widget.moved_down.connect(lambda w=layer_widget: self._move_layer_down(w))
+        layer_widget.changed.connect(self._on_layer_settings_changed)
+        layer_widget.remove_requested.connect(lambda w=layer_widget: self.remove_layer(w))
+
+        # Add to list and layout (before the stretch)
+        self.layer_widgets.append(layer_widget)
+        self.layers_container_layout.insertWidget(len(self.layer_widgets) - 1, layer_widget)
+
+        # Update UI state
+        self._update_move_buttons()
+        self._on_layer_changed()
+        self.changed.emit()
+
+    def remove_layer(self, layer_widget: LayerItemWidget):
+        """
+        Remove a layer from the composition.
+
+        Args:
+            layer_widget: Layer widget to remove
+        """
+        # Remove from layout and list
+        self.layers_container_layout.removeWidget(layer_widget)
+        self.layer_widgets.remove(layer_widget)
+
+        # Delete widget
+        layer_widget.deleteLater()
+
+        # Update UI state
+        self._update_move_buttons()
+        self._on_layer_changed()
+        self.changed.emit()
+
     def _on_zoom_changed(self):
-        """Handle zoom level change."""
+        """Handle output zoom level change."""
         self._update_estimates()
+        self._update_sync_button_visibility()
+
+    def update_preview_zoom(self, zoom: int):
+        """
+        Update the displayed preview zoom level.
+
+        Args:
+            zoom: Current preview zoom level
+        """
+        self.current_preview_zoom = zoom
+        self.preview_zoom_label.setText(str(zoom))
+        self._update_sync_button_visibility()
+
+    def _update_sync_button_visibility(self):
+        """Show/hide sync button based on whether preview zoom differs from output zoom."""
+        if self.current_preview_zoom is None:
+            self.sync_zoom_button.setVisible(False)
+        else:
+            output_zoom = self.zoom_spinner.value()
+            self.sync_zoom_button.setVisible(self.current_preview_zoom != output_zoom)
+
+    def _on_sync_zoom_clicked(self):
+        """Handle sync zoom button click."""
+        output_zoom = self.zoom_spinner.value()
+        self.sync_preview_zoom_requested.emit(output_zoom)
 
     def _update_zoom_range(self):
         """Update zoom range based on enabled layers."""
@@ -478,26 +714,26 @@ class SettingsPanel(QWidget):
 
     def get_enabled_layers(self) -> List[LayerConfig]:
         """
-        Get list of enabled layer configurations.
+        Get list of added layer configurations.
 
         Returns:
-            List of enabled LayerConfig objects
+            List of LayerConfig objects
         """
-        return [widget.layer_config for widget in self.layer_widgets if widget.is_enabled()]
+        return [widget.layer_config for widget in self.layer_widgets]
 
     def get_layer_compositions(self) -> List[LayerComposition]:
         """
-        Get list of enabled layers with their composition settings.
+        Get list of added layers with their composition settings.
 
         Returns:
-            List of LayerComposition objects
+            List of LayerComposition objects (in bottom-to-top order for compositing)
         """
-        compositions = []
-        for widget in self.layer_widgets:
-            if widget.is_enabled():
-                compositions.append(LayerComposition(
-                    layer_config=widget.layer_config,
-                    opacity=widget.get_opacity(),
-                    blend_mode=widget.get_blend_mode()
-                ))
-        return compositions
+        # Reverse order: top layer in UI should be composited last (on top)
+        return [
+            LayerComposition(
+                layer_config=widget.layer_config,
+                opacity=widget.get_opacity(),
+                blend_mode=widget.get_blend_mode()
+            )
+            for widget in reversed(self.layer_widgets)
+        ]
