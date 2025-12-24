@@ -192,6 +192,70 @@ class LayerItemWidget(QFrame):
         return self.blend_combo.currentData()
 
 
+class LayerListItemWidget(QWidget):
+    """Custom widget for layer items in the selection dialog."""
+
+    def __init__(self, layer_config: LayerConfig, preview_path: Path, parent=None):
+        """Initialize layer list item widget.
+
+        Args:
+            layer_config: Layer configuration
+            preview_path: Path to preview image
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.layer_config = layer_config
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Preview image
+        preview_label = QLabel()
+        if preview_path.exists():
+            pixmap = QPixmap(str(preview_path))
+            scaled_pixmap = pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio,
+                                           Qt.TransformationMode.SmoothTransformation)
+            preview_label.setPixmap(scaled_pixmap)
+        preview_label.setFixedSize(80, 80)
+        layout.addWidget(preview_label)
+
+        # Layer name
+        name_label = QLabel(f"{layer_config.display_name}\n{layer_config.japanese_name}")
+        name_label.setWordWrap(True)
+        layout.addWidget(name_label, 1)
+
+        # Info button
+        info_button = QPushButton("ℹ️")
+        info_button.setFixedSize(30, 30)
+        info_button.setToolTip("Show layer information")
+        info_button.clicked.connect(self.show_info)
+        layout.addWidget(info_button)
+
+        self.setLayout(layout)
+
+    def show_info(self):
+        """Show information dialog for this layer."""
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(f"Layer Information - {self.layer_config.display_name}")
+        dialog.setTextFormat(Qt.TextFormat.RichText)
+
+        info_text = f"""
+        <h3>{self.layer_config.display_name}</h3>
+        <p><b>Japanese Name:</b> {self.layer_config.japanese_name}</p>
+        <p><b>Format:</b> {self.layer_config.extension.upper()}</p>
+        <p><b>Zoom Range:</b> {self.layer_config.min_zoom} - {self.layer_config.max_zoom}</p>
+        <br>
+        <p>{self.layer_config.full_description}</p>
+        <br>
+        <p><b>More information:</b><br>
+        <a href="{self.layer_config.info_url}">{self.layer_config.info_url}</a></p>
+        """
+
+        dialog.setText(info_text)
+        dialog.setIcon(QMessageBox.Icon.Information)
+        dialog.exec()
+
+
 class AddLayerDialog(QDialog):
     """Dialog for selecting a layer to add."""
 
@@ -233,7 +297,6 @@ class AddLayerDialog(QDialog):
 
         # List of available layers
         self.layer_list = QListWidget()
-        self.layer_list.setIconSize(QSize(80, 80))  # Set icon size for previews
         self.layer_list.setSpacing(5)
 
         # Populate with all layers initially
@@ -258,19 +321,19 @@ class AddLayerDialog(QDialog):
         self.layer_list.clear()
 
         for layer_config in layers:
-            item = QListWidgetItem(f"{layer_config.display_name}\n{layer_config.japanese_name}")
+            # Create list item
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, layer_config)
 
-            # Load preview image
+            # Load preview image path
             preview_path = self.preview_dir / f"{layer_config.name}.{layer_config.extension}"
-            if preview_path.exists():
-                pixmap = QPixmap(str(preview_path))
-                # Scale to fit icon size while maintaining aspect ratio
-                scaled_pixmap = pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio,
-                                               Qt.TransformationMode.SmoothTransformation)
-                item.setIcon(QIcon(scaled_pixmap))
+
+            # Create custom widget for this item
+            item_widget = LayerListItemWidget(layer_config, preview_path)
+            item.setSizeHint(item_widget.sizeHint())
 
             self.layer_list.addItem(item)
+            self.layer_list.setItemWidget(item, item_widget)
 
     def _on_category_changed(self, index: int):
         """Handle category filter change."""
@@ -330,19 +393,11 @@ class SettingsPanel(QWidget):
         add_layer_button.clicked.connect(self._on_add_layer_clicked)
         layer_layout.addWidget(add_layer_button)
 
-        # Scroll area for layer widgets
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        scroll_widget = QWidget()
+        # Container for layer widgets (no scroll area - entire panel will scroll)
         self.layers_container_layout = QVBoxLayout()
         self.layers_container_layout.setSpacing(5)
-        self.layers_container_layout.addStretch()
-        scroll_widget.setLayout(self.layers_container_layout)
-        scroll_area.setWidget(scroll_widget)
+        layer_layout.addLayout(self.layers_container_layout)
 
-        layer_layout.addWidget(scroll_area)
         layer_group.setLayout(layer_layout)
         layout.addWidget(layer_group)
 
@@ -439,9 +494,22 @@ class SettingsPanel(QWidget):
         self.generate_button.setMinimumHeight(40)
 
         layout.addWidget(self.generate_button)
-        layout.addStretch()
 
-        self.setLayout(layout)
+        # Wrap entire panel in scroll area
+        content_widget = QWidget()
+        content_widget.setLayout(layout)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setWidget(content_widget)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll_area)
+
+        self.setLayout(main_layout)
 
         # Start with standard layer by default
         self.add_layer(LAYERS['std'])
