@@ -135,11 +135,7 @@
                     }
                 }
             },
-            edit: {
-                featureGroup: drawnItems,
-                edit: false,
-                remove: false
-            }
+            edit: false  // Remove edit button from toolbar
         });
         map.addControl(drawControl);
 
@@ -210,22 +206,12 @@
             }
         });
 
-        // Handle draw events
-        map.on(L.Draw.Event.CREATED, function(e) {
-            var layer = e.layer;
-            // Clear any existing extent (single extent only)
-            drawnItems.clearLayers();
-            drawnItems.addLayer(layer);
+        // Track the current extent layer
+        var currentExtentLayer = null;
 
+        // Function to send extent to Qt
+        function sendExtentToQt(layer) {
             var bounds = layer.getBounds();
-
-            // Hide instructions
-            var instructions = document.getElementById('instructions');
-            if (instructions) {
-                instructions.style.display = 'none';
-            }
-
-            // Send extent to Qt
             if (bridge) {
                 bridge.set_extent(
                     bounds.getSouth(),
@@ -234,6 +220,34 @@
                     bounds.getEast()
                 );
             }
+        }
+
+        // Handle draw events
+        map.on(L.Draw.Event.CREATED, function(e) {
+            var layer = e.layer;
+            // Clear any existing extent (single extent only)
+            drawnItems.clearLayers();
+            drawnItems.addLayer(layer);
+
+            // Store reference
+            currentExtentLayer = layer;
+
+            // Hide instructions
+            var instructions = document.getElementById('instructions');
+            if (instructions) {
+                instructions.style.display = 'none';
+            }
+
+            // Send initial extent to Qt
+            sendExtentToQt(layer);
+
+            // Enable editing immediately
+            layer.editing.enable();
+
+            // Listen to edit events on the layer's editing handler
+            layer.on('edit', function() {
+                sendExtentToQt(layer);
+            });
         });
     </script>
 </body>
