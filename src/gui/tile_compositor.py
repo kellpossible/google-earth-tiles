@@ -84,6 +84,46 @@ class TileCompositor:
 
         return scaled_image.crop((left, top, right, bottom))
 
+    async def _downsample_from_grid(
+        self,
+        base_x: int,
+        base_y: int,
+        source_zoom: int,
+        zoom_diff: int,
+        url_template: str
+    ) -> Image.Image:
+        """
+        Downsample by fetching a grid of higher-zoom tiles.
+
+        Args:
+            base_x: Base tile X coordinate at source zoom
+            base_y: Base tile Y coordinate at source zoom
+            source_zoom: Source zoom level (higher than target)
+            zoom_diff: Difference between source and target zoom (source - target)
+            url_template: URL template for fetching tiles
+
+        Returns:
+            Downsampled 256x256 tile
+        """
+        scale = 2 ** zoom_diff
+        canvas_size = 256 * scale
+        canvas = Image.new('RGBA', (canvas_size, canvas_size), (0, 0, 0, 0))
+
+        # Fetch and place tiles in grid
+        for dy in range(scale):
+            for dx in range(scale):
+                tile_x = base_x + dx
+                tile_y = base_y + dy
+
+                url = url_template.format(x=tile_x, y=tile_y, z=source_zoom)
+                tile = await self.fetch_tile(url, needs_upsampling=False, scale_factor=1, offset_x=0, offset_y=0)
+
+                if tile:
+                    canvas.paste(tile, (dx * 256, dy * 256))
+
+        # Downsample to target size using high-quality Lanczos filter
+        return canvas.resize((256, 256), Image.Resampling.LANCZOS)
+
     async def fetch_tile(self, url: str, needs_upsampling: bool = False,
                          scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0) -> Optional[Image.Image]:
         """
@@ -117,6 +157,75 @@ class TileCompositor:
         except Exception as e:
             logger.warning(f"Error fetching tile {url}: {e}")
             return None
+
+    @staticmethod
+    def _blend_tile_stack(tiles: List[tuple]) -> bytes:
+        """
+        Composite a stack of tiles into a single PNG image.
+
+        Shared by both async and sync compositors to ensure consistent blending.
+
+        Args:
+            tiles: List of (tile_image, opacity, blend_mode) tuples
+
+        Returns:
+            PNG image bytes
+        """
+        result = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+
+        for tile, opacity, blend_mode in tiles:
+            # Apply opacity if needed
+            if opacity < 100:
+                # Create a copy and modify alpha channel
+                tile_copy = tile.copy()
+                alpha = tile_copy.split()[3]
+                alpha = alpha.point(lambda p: int(p * opacity / 100))
+                tile_copy.putalpha(alpha)
+                tile_with_opacity = tile_copy
+            else:
+                tile_with_opacity = tile
+
+            # Blend with result using numpy for performance
+            base_array = np.array(result, dtype=np.float32) / 255.0
+            overlay_array = np.array(tile_with_opacity, dtype=np.float32) / 255.0
+
+            base_rgb = base_array[:, :, :3]
+            base_alpha = base_array[:, :, 3:4]
+            overlay_rgb = overlay_array[:, :, :3]
+            overlay_alpha = overlay_array[:, :, 3:4]
+
+            # Apply blend mode to RGB channels
+            if blend_mode == 'normal':
+                blended_rgb = overlay_rgb
+            elif blend_mode == 'multiply':
+                blended_rgb = base_rgb * overlay_rgb
+            elif blend_mode == 'screen':
+                blended_rgb = 1 - (1 - base_rgb) * (1 - overlay_rgb)
+            elif blend_mode == 'overlay':
+                mask = base_rgb < 0.5
+                blended_rgb = np.where(
+                    mask,
+                    2 * base_rgb * overlay_rgb,
+                    1 - 2 * (1 - base_rgb) * (1 - overlay_rgb)
+                )
+            else:
+                blended_rgb = overlay_rgb
+
+            # Alpha compositing: blend the blended RGB with base RGB using overlay's alpha
+            result_rgb = base_rgb * (1 - overlay_alpha) + blended_rgb * overlay_alpha
+
+            # Alpha channel compositing
+            result_alpha = overlay_alpha + base_alpha * (1 - overlay_alpha)
+
+            # Combine and convert back
+            result_array = np.dstack([result_rgb, result_alpha])
+            result_array = np.clip(result_array * 255, 0, 255).astype(np.uint8)
+            result = Image.fromarray(result_array, mode='RGBA')
+
+        # Convert to PNG bytes
+        buffer = io.BytesIO()
+        result.save(buffer, format='PNG')
+        return buffer.getvalue()
 
     def apply_opacity(self, image: Image.Image, opacity: int) -> Image.Image:
         """
@@ -203,16 +312,20 @@ class TileCompositor:
         x: int,
         y: int,
         z: int,
-        layer_compositions: List[LayerComposition]
+        layer_compositions: List[LayerComposition],
+        output_min_zoom: Optional[int] = None,
+        output_max_zoom: Optional[int] = None
     ) -> Optional[bytes]:
         """
-        Composite a tile from multiple layers.
+        Composite a tile from multiple layers with per-layer LOD support.
 
         Args:
             x: Tile X coordinate
             y: Tile Y coordinate
             z: Zoom level
             layer_compositions: List of LayerComposition objects
+            output_min_zoom: Minimum zoom level in output range (for LOD)
+            output_max_zoom: Maximum zoom level in output range (for LOD)
 
         Returns:
             PNG image bytes or None if composition failed
@@ -224,43 +337,61 @@ class TileCompositor:
             img.save(buffer, format='PNG')
             return buffer.getvalue()
 
+        # Determine output zoom range if not provided
+        if output_min_zoom is None:
+            output_min_zoom = min(comp.layer_config.min_zoom for comp in layer_compositions)
+        if output_max_zoom is None:
+            output_max_zoom = max(comp.layer_config.max_zoom for comp in layer_compositions)
+
         # Fetch all tiles
         tiles = []
         for composition in layer_compositions:
-            # Get effective coordinates for this layer
-            fetch_x, fetch_y, fetch_z, needs_upsampling, scale_factor, offset_x, offset_y = \
-                self._get_effective_tile_coords(x, y, z, composition.layer_config)
-
-            if fetch_x is None:
-                # Layer doesn't support this zoom (below min), skip it
-                logger.debug(f"Skipping {composition.layer_config.name} at zoom {z} (below min)")
+            # Skip disabled layers
+            if not composition.enabled:
+                logger.debug(f"Skipping {composition.layer_config.name} (layer disabled)")
                 continue
 
-            # Build URL with effective coordinates
-            url = composition.layer_config.url_template.format(x=fetch_x, y=fetch_y, z=fetch_z)
+            # Get available zooms for this layer based on its LOD settings
+            available_zooms = composition.get_available_zooms(output_min_zoom, output_max_zoom)
 
-            # Fetch and optionally upsample
-            tile = await self.fetch_tile(url, needs_upsampling, scale_factor, offset_x, offset_y)
+            if not available_zooms:
+                logger.debug(f"Skipping {composition.layer_config.name} at zoom {z} (no available zooms)")
+                continue
+
+            # Find best source zoom for this layer
+            source_zoom = composition.find_best_source_zoom(z, available_zooms)
+
+            # Calculate fetch coordinates and determine if resampling is needed
+            if source_zoom == z:
+                # Direct fetch - no resampling
+                url = composition.layer_config.url_template.format(x=x, y=y, z=source_zoom)
+                tile = await self.fetch_tile(url, needs_upsampling=False, scale_factor=1, offset_x=0, offset_y=0)
+            elif source_zoom < z:
+                # Upsample from lower zoom
+                zoom_diff = z - source_zoom
+                scale_factor = 2 ** zoom_diff
+                fetch_x = x >> zoom_diff
+                fetch_y = y >> zoom_diff
+                offset_x = x - (fetch_x << zoom_diff)
+                offset_y = y - (fetch_y << zoom_diff)
+                url = composition.layer_config.url_template.format(x=fetch_x, y=fetch_y, z=source_zoom)
+                tile = await self.fetch_tile(url, needs_upsampling=True, scale_factor=scale_factor, offset_x=offset_x, offset_y=offset_y)
+            else:
+                # Downsample from higher zoom
+                zoom_diff = source_zoom - z
+                base_x = x << zoom_diff
+                base_y = y << zoom_diff
+                tile = await self._downsample_from_grid(base_x, base_y, source_zoom, zoom_diff, composition.layer_config.url_template)
+
+            # Add tile to composition
             if tile:
                 tiles.append((tile, composition.opacity, composition.blend_mode))
             else:
                 # Use transparent tile if fetch failed
                 tiles.append((Image.new('RGBA', (256, 256), (0, 0, 0, 0)), composition.opacity, composition.blend_mode))
 
-        # Composite tiles
-        result = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
-
-        for tile, opacity, blend_mode in tiles:
-            # Apply opacity
-            tile_with_opacity = self.apply_opacity(tile, opacity)
-
-            # Blend with result
-            result = self.blend_images(result, tile_with_opacity, blend_mode)
-
-        # Convert to PNG bytes
-        buffer = io.BytesIO()
-        result.save(buffer, format='PNG')
-        return buffer.getvalue()
+        # Composite tiles using shared blending logic
+        return self._blend_tile_stack(tiles)
 
     async def close(self):
         """Close aiohttp session."""
@@ -386,6 +517,8 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
         """
         Synchronously composite a tile (for use in background threads).
 
+        Note: Preview always uses all available zoom levels, ignoring LOD settings.
+
         Args:
             x: Tile X coordinate
             y: Tile Y coordinate
@@ -404,8 +537,15 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                 return buffer.getvalue()
 
             # Fetch all tiles synchronously
+            # Note: Preview ignores LOD settings - uses old _get_effective_tile_coords
+            # which only respects layer min/max zoom, not per-layer LOD configuration
             tiles = []
             for composition in compositions:
+                # Skip disabled layers
+                if not composition.enabled:
+                    logger.debug(f"Skipping {composition.layer_config.name} (layer disabled)")
+                    continue
+
                 # Get effective coordinates for this layer
                 fetch_x, fetch_y, fetch_z, needs_upsampling, scale_factor, offset_x, offset_y = \
                     self._get_effective_tile_coords(x, y, z, composition.layer_config)
@@ -426,20 +566,8 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                     # Use transparent tile if fetch failed
                     tiles.append((Image.new('RGBA', (256, 256), (0, 0, 0, 0)), composition.opacity, composition.blend_mode))
 
-            # Composite tiles
-            result = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
-
-            for tile, opacity, blend_mode in tiles:
-                # Apply opacity
-                tile_with_opacity = self.compositor.apply_opacity(tile, opacity)
-
-                # Blend with result
-                result = self.compositor.blend_images(result, tile_with_opacity, blend_mode)
-
-            # Convert to PNG bytes
-            buffer = io.BytesIO()
-            result.save(buffer, format='PNG')
-            return buffer.getvalue()
+            # Composite tiles using shared blending logic
+            return TileCompositor._blend_tile_stack(tiles)
 
         except Exception as e:
             logger.exception(f"Error compositing tile {z}/{x}/{y}: {e}")

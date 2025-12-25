@@ -53,15 +53,18 @@ class LayerItemWidget(QFrame):
     changed = pyqtSignal()
     remove_requested = pyqtSignal()  # Emitted when user clicks remove button
 
-    def __init__(self, layer_config: LayerConfig, parent=None):
+    def __init__(self, composition: LayerComposition, parent=None):
         """Initialize layer item widget.
 
         Args:
-            layer_config: Layer configuration
+            composition: Layer composition configuration
             parent: Parent widget
         """
         super().__init__(parent)
-        self.layer_config = layer_config
+        self.composition = composition
+        self.output_min_zoom = 2  # Will be updated by parent
+        self.output_max_zoom = 18
+        self.zoom_checkboxes = {}  # Store zoom checkboxes for updates
         self.init_ui()
 
     def init_ui(self):
@@ -69,12 +72,19 @@ class LayerItemWidget(QFrame):
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Top row: name, info button, remove button
+        # Top row: checkbox, name, info button, remove button
         top_row = QHBoxLayout()
 
-        name_label = QLabel(f"{self.layer_config.display_name}")
-        name_label.setStyleSheet("font-weight: bold;")
-        top_row.addWidget(name_label, 1)
+        # Enable/disable checkbox
+        self.enabled_checkbox = QCheckBox()
+        self.enabled_checkbox.setChecked(self.composition.enabled)
+        self.enabled_checkbox.setToolTip("Enable/disable this layer")
+        self.enabled_checkbox.stateChanged.connect(self._on_enabled_changed)
+        top_row.addWidget(self.enabled_checkbox)
+
+        self.name_label = QLabel(f"{self.composition.layer_config.display_name}")
+        self.name_label.setStyleSheet("font-weight: bold;")
+        top_row.addWidget(self.name_label, 1)
 
         self.info_button = QPushButton("ℹ️")
         self.info_button.setFixedSize(24, 24)
@@ -94,13 +104,13 @@ class LayerItemWidget(QFrame):
         opacity_layout = QHBoxLayout()
         opacity_layout.setContentsMargins(20, 0, 0, 0)  # Indent controls
 
-        opacity_label = QLabel("Opacity:")
-        opacity_layout.addWidget(opacity_label)
+        self.opacity_label = QLabel("Opacity:")
+        opacity_layout.addWidget(self.opacity_label)
 
         self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self.opacity_slider.setMinimum(0)
         self.opacity_slider.setMaximum(100)
-        self.opacity_slider.setValue(100)
+        self.opacity_slider.setValue(self.composition.opacity)
         self.opacity_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.opacity_slider.setTickInterval(25)
         self.opacity_slider.valueChanged.connect(self._sync_opacity_spinbox)
@@ -109,7 +119,7 @@ class LayerItemWidget(QFrame):
         self.opacity_spinbox = QSpinBox()
         self.opacity_spinbox.setMinimum(0)
         self.opacity_spinbox.setMaximum(100)
-        self.opacity_spinbox.setValue(100)
+        self.opacity_spinbox.setValue(self.composition.opacity)
         self.opacity_spinbox.setSuffix("%")
         self.opacity_spinbox.setFixedWidth(70)
         self.opacity_spinbox.valueChanged.connect(self._sync_opacity_slider)
@@ -121,12 +131,16 @@ class LayerItemWidget(QFrame):
         blend_layout = QHBoxLayout()
         blend_layout.setContentsMargins(20, 0, 0, 0)  # Indent controls
 
-        blend_label = QLabel("Blend:")
-        blend_layout.addWidget(blend_label)
+        self.blend_label = QLabel("Blend:")
+        blend_layout.addWidget(self.blend_label)
 
         self.blend_combo = QComboBox()
         for display_name, value in BLEND_MODES:
             self.blend_combo.addItem(display_name, value)
+        # Set initial value from composition
+        blend_index = self.blend_combo.findData(self.composition.blend_mode)
+        if blend_index >= 0:
+            self.blend_combo.setCurrentIndex(blend_index)
         self.blend_combo.currentIndexChanged.connect(self.changed.emit)
         blend_layout.addWidget(self.blend_combo, 1)
 
@@ -145,15 +159,58 @@ class LayerItemWidget(QFrame):
 
         layout.addLayout(blend_layout)
 
+        # LOD mode dropdown
+        lod_layout = QHBoxLayout()
+        lod_layout.setContentsMargins(20, 0, 0, 0)  # Indent
+
+        self.lod_label = QLabel("LOD:")
+        lod_layout.addWidget(self.lod_label)
+
+        self.lod_combo = QComboBox()
+        self.lod_combo.addItems(["Use All Zooms", "Select Zooms"])
+        # Set initial value from composition
+        if self.composition.lod_mode == "all_zooms":
+            self.lod_combo.setCurrentIndex(0)
+        else:
+            self.lod_combo.setCurrentIndex(1)
+        self.lod_combo.currentIndexChanged.connect(self._on_lod_mode_changed)
+        lod_layout.addWidget(self.lod_combo, 1)
+
+        layout.addLayout(lod_layout)
+
+        # Zoom selection checkboxes (hidden by default)
+        self.zoom_selection_container = QWidget()
+        zoom_selection_layout = QVBoxLayout(self.zoom_selection_container)
+        zoom_selection_layout.setContentsMargins(20, 0, 0, 0)  # Indent
+
+        zoom_label = QLabel("Select zoom levels:")
+        zoom_selection_layout.addWidget(zoom_label)
+
+        self.zoom_checkboxes_widget = QWidget()
+        from PyQt6.QtWidgets import QGridLayout
+        self.zoom_checkboxes_layout = QGridLayout(self.zoom_checkboxes_widget)
+        self.zoom_checkboxes_layout.setSpacing(5)
+        zoom_selection_layout.addWidget(self.zoom_checkboxes_widget)
+
+        self.zoom_selection_container.setVisible(self.composition.lod_mode == "select_zooms")
+        layout.addWidget(self.zoom_selection_container)
+
+        # Build initial zoom checkboxes
+        self._update_zoom_checkboxes()
+
         self.setLayout(layout)
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
         self.setStyleSheet("LayerItemWidget { border: 1px solid #ccc; border-radius: 4px; }")
+
+        # Set initial enabled state
+        self._update_enabled_state()
 
     def _sync_opacity_spinbox(self, value: int):
         """Sync spinbox when slider changes."""
         self.opacity_spinbox.blockSignals(True)
         self.opacity_spinbox.setValue(value)
         self.opacity_spinbox.blockSignals(False)
+        self.composition.opacity = value
         self.changed.emit()
 
     def _sync_opacity_slider(self, value: int):
@@ -161,37 +218,146 @@ class LayerItemWidget(QFrame):
         self.opacity_slider.blockSignals(True)
         self.opacity_slider.setValue(value)
         self.opacity_slider.blockSignals(False)
+        self.composition.opacity = value
+        self.changed.emit()
+
+    def _on_lod_mode_changed(self, index):
+        """Handle LOD mode dropdown change."""
+        if index == 0:  # Use All Zooms
+            self.composition.lod_mode = "all_zooms"
+            self.zoom_selection_container.setVisible(False)
+        else:  # Select Zooms
+            self.composition.lod_mode = "select_zooms"
+            self.zoom_selection_container.setVisible(True)
+            self._update_zoom_checkboxes()
+
+        self.changed.emit()
+
+    def _on_enabled_changed(self, state):
+        """Handle enabled checkbox state change."""
+        # Use isChecked() to reliably get the checkbox state
+        self.composition.enabled = self.enabled_checkbox.isChecked()
+        self._update_enabled_state()
+        self.changed.emit()
+
+    def _update_enabled_state(self):
+        """Update widget appearance and control states based on enabled status."""
+        enabled = self.composition.enabled
+
+        # Enable/disable all controls except the checkbox itself
+        # Qt will automatically grey out disabled controls
+        self.name_label.setEnabled(enabled)
+        self.info_button.setEnabled(enabled)
+        self.remove_button.setEnabled(enabled)
+        self.opacity_label.setEnabled(enabled)
+        self.opacity_slider.setEnabled(enabled)
+        self.opacity_spinbox.setEnabled(enabled)
+        self.blend_label.setEnabled(enabled)
+        self.blend_combo.setEnabled(enabled)
+        self.up_button.setEnabled(enabled)
+        self.down_button.setEnabled(enabled)
+        self.lod_label.setEnabled(enabled)
+        self.lod_combo.setEnabled(enabled)
+        self.zoom_selection_container.setEnabled(enabled)
+
+        # Checkbox always stays enabled so user can re-enable the layer
+        self.enabled_checkbox.setEnabled(True)
+
+    def set_output_zoom_range(self, min_zoom: int, max_zoom: int):
+        """Update available zoom range from main settings.
+
+        Args:
+            min_zoom: Minimum zoom level in output range
+            max_zoom: Maximum zoom level in output range
+        """
+        self.output_min_zoom = min_zoom
+        self.output_max_zoom = max_zoom
+
+        if self.composition.lod_mode == "select_zooms":
+            self._update_zoom_checkboxes()
+
+    def _update_zoom_checkboxes(self):
+        """Rebuild zoom level checkboxes based on output range."""
+        # Clear existing checkboxes
+        while self.zoom_checkboxes_layout.count():
+            item = self.zoom_checkboxes_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self.zoom_checkboxes = {}
+
+        # Create checkboxes for each zoom in output range
+        row = 0
+        col = 0
+        max_cols = 6
+
+        for zoom in range(self.output_min_zoom, self.output_max_zoom + 1):
+            checkbox = QCheckBox(str(zoom))
+
+            # Disable if outside layer's capability
+            if zoom < self.composition.layer_config.min_zoom or zoom > self.composition.layer_config.max_zoom:
+                checkbox.setEnabled(False)
+                checkbox.setToolTip(f"Layer only supports zoom {self.composition.layer_config.min_zoom}-{self.composition.layer_config.max_zoom}")
+            else:
+                checkbox.setChecked(zoom in self.composition.selected_zooms)
+                checkbox.stateChanged.connect(
+                    lambda state, z=zoom: self._on_zoom_checkbox_changed(z, state)
+                )
+
+            self.zoom_checkboxes[zoom] = checkbox
+            self.zoom_checkboxes_layout.addWidget(checkbox, row, col)
+
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
+
+    def _on_zoom_checkbox_changed(self, zoom: int, state):
+        """Handle zoom checkbox state change.
+
+        Args:
+            zoom: Zoom level
+            state: Checkbox state (Qt.CheckState value)
+        """
+        if state == Qt.CheckState.Checked.value:
+            self.composition.selected_zooms.add(zoom)
+        else:
+            self.composition.selected_zooms.discard(zoom)
+
         self.changed.emit()
 
     def show_info(self):
         """Show information dialog for this layer."""
         dialog = QMessageBox(self)
-        dialog.setWindowTitle(f"Layer Information - {self.layer_config.display_name}")
+        dialog.setWindowTitle(f"Layer Information - {self.composition.layer_config.display_name}")
         dialog.setTextFormat(Qt.TextFormat.RichText)
 
         info_text = f"""
-        <h3>{self.layer_config.display_name}</h3>
-        <p><b>Japanese Name:</b> {self.layer_config.japanese_name}</p>
-        <p><b>Format:</b> {self.layer_config.extension.upper()}</p>
-        <p><b>Zoom Range:</b> {self.layer_config.min_zoom} - {self.layer_config.max_zoom}</p>
+        <h3>{self.composition.layer_config.display_name}</h3>
+        <p><b>Japanese Name:</b> {self.composition.layer_config.japanese_name}</p>
+        <p><b>Format:</b> {self.composition.layer_config.extension.upper()}</p>
+        <p><b>Zoom Range:</b> {self.composition.layer_config.min_zoom} - {self.composition.layer_config.max_zoom}</p>
         <br>
-        <p>{self.layer_config.full_description}</p>
+        <p>{self.composition.layer_config.full_description}</p>
         <br>
         <p><b>More information:</b><br>
-        <a href="{self.layer_config.info_url}">{self.layer_config.info_url}</a></p>
+        <a href="{self.composition.layer_config.info_url}">{self.composition.layer_config.info_url}</a></p>
         """
 
         dialog.setText(info_text)
         dialog.setIcon(QMessageBox.Icon.Information)
         dialog.exec()
 
-    def get_opacity(self) -> int:
-        """Get opacity value (0-100)."""
-        return self.opacity_spinbox.value()
+    def get_composition(self) -> LayerComposition:
+        """Get the layer composition with current settings.
 
-    def get_blend_mode(self) -> str:
-        """Get selected blend mode value."""
-        return self.blend_combo.currentData()
+        Returns:
+            LayerComposition with current UI values
+        """
+        # Update composition with current UI values
+        self.composition.opacity = self.opacity_spinbox.value()
+        self.composition.blend_mode = self.blend_combo.currentData()
+        return self.composition
 
 
 class LayerListItemWidget(QWidget):
@@ -582,7 +748,7 @@ class SettingsPanel(QWidget):
     def _on_add_layer_clicked(self):
         """Handle Add Layer button click."""
         # Get list of layers not currently added
-        added_layer_names = {w.layer_config.name for w in self.layer_widgets}
+        added_layer_names = {w.composition.layer_config.name for w in self.layer_widgets}
         available_layers = [config for name, config in LAYERS.items()
                            if name not in added_layer_names]
 
@@ -605,8 +771,22 @@ class SettingsPanel(QWidget):
         Args:
             layer_config: Layer configuration to add
         """
+        # Create layer composition with default settings
+        composition = LayerComposition(
+            layer_config=layer_config,
+            opacity=100,
+            blend_mode='normal',
+            lod_mode='all_zooms',
+            selected_zooms=set(),
+            enabled=True
+        )
+
         # Create layer widget
-        layer_widget = LayerItemWidget(layer_config)
+        layer_widget = LayerItemWidget(composition)
+
+        # Set current zoom range
+        min_zoom, max_zoom = self.zoom_range_widget.value()
+        layer_widget.set_output_zoom_range(min_zoom, max_zoom)
 
         # Connect signals
         layer_widget.moved_up.connect(lambda w=layer_widget: self._move_layer_up(w))
@@ -615,9 +795,9 @@ class SettingsPanel(QWidget):
         layer_widget.changed.connect(self._emit_state_changed)
         layer_widget.remove_requested.connect(lambda w=layer_widget: self.remove_layer(w))
 
-        # Add to list and layout (before the stretch)
-        self.layer_widgets.append(layer_widget)
-        self.layers_container_layout.insertWidget(len(self.layer_widgets) - 1, layer_widget)
+        # Add to list and layout at the top (position 0)
+        self.layer_widgets.insert(0, layer_widget)
+        self.layers_container_layout.insertWidget(0, layer_widget)
 
         # Update UI state
         self._update_move_buttons()
@@ -652,6 +832,10 @@ class SettingsPanel(QWidget):
             self.zoom_display_label.setText(f"Zoom: {max_zoom}")
         else:
             self.zoom_display_label.setText(f"Zoom: {min_zoom}-{max_zoom} ({max_zoom - min_zoom + 1} levels)")
+
+        # Update all layer widgets with new zoom range
+        for widget in self.layer_widgets:
+            widget.set_output_zoom_range(min_zoom, max_zoom)
 
         self._update_estimates()
         self._update_sync_button_visibility()
@@ -828,7 +1012,7 @@ class SettingsPanel(QWidget):
         Returns:
             List of LayerConfig objects
         """
-        return [widget.layer_config for widget in self.layer_widgets]
+        return [widget.composition.layer_config for widget in self.layer_widgets]
 
     def get_layer_compositions(self) -> List[LayerComposition]:
         """
@@ -839,11 +1023,7 @@ class SettingsPanel(QWidget):
         """
         # Reverse order: top layer in UI should be composited last (on top)
         return [
-            LayerComposition(
-                layer_config=widget.layer_config,
-                opacity=widget.get_opacity(),
-                blend_mode=widget.get_blend_mode()
-            )
+            widget.get_composition()
             for widget in reversed(self.layer_widgets)
         ]
 
@@ -898,11 +1078,7 @@ class SettingsPanel(QWidget):
             # 2. Load layers (YAML has compositing order, reverse for UI display)
             for layer_spec in reversed(state['layers']):
                 comp = LayerComposition.from_dict(layer_spec)
-                self._add_layer_with_settings(
-                    comp.layer_config,
-                    comp.opacity,
-                    comp.blend_mode
-                )
+                self._add_layer_with_composition(comp)
 
             # 3. Set zoom range
             min_zoom = state['min_zoom']
@@ -939,31 +1115,19 @@ class SettingsPanel(QWidget):
             widget.deleteLater()
         self.layer_widgets.clear()
 
-    def _add_layer_with_settings(
-        self,
-        layer_config: LayerConfig,
-        opacity: int,
-        blend_mode: str
-    ) -> None:
+    def _add_layer_with_composition(self, composition: LayerComposition) -> None:
         """
-        Add a layer with specific settings (for loading saved state).
+        Add a layer with a full composition (for loading saved state).
 
         Args:
-            layer_config: Layer configuration
-            opacity: Opacity value (0-100)
-            blend_mode: Blend mode ('normal', 'multiply', 'screen', 'overlay')
+            composition: Layer composition with all settings including LOD
         """
-        layer_widget = LayerItemWidget(layer_config)
+        # Create layer widget with composition
+        layer_widget = LayerItemWidget(composition)
 
-        # Set opacity
-        layer_widget.opacity_slider.setValue(opacity)
-        layer_widget.opacity_spinbox.setValue(opacity)
-
-        # Set blend mode
-        for i in range(layer_widget.blend_combo.count()):
-            if layer_widget.blend_combo.itemData(i) == blend_mode:
-                layer_widget.blend_combo.setCurrentIndex(i)
-                break
+        # Set current zoom range
+        min_zoom, max_zoom = self.zoom_range_widget.value()
+        layer_widget.set_output_zoom_range(min_zoom, max_zoom)
 
         # Connect signals
         layer_widget.moved_up.connect(lambda w=layer_widget: self._move_layer_up(w))

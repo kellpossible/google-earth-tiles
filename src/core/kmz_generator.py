@@ -112,8 +112,12 @@ class KMZGenerator:
                 if self.progress_callback:
                     self.progress_callback(i, total_tiles, f"Compositing tile {i+1}/{total_tiles}...")
 
-                # Composite tile using the same logic as preview
-                tile_data = await self.compositor.composite_tile(x, y, z, layer_compositions)
+                # Composite tile using the same logic as preview (with per-layer LOD support)
+                tile_data = await self.compositor.composite_tile(
+                    x, y, z, layer_compositions,
+                    output_min_zoom=min_zoom,
+                    output_max_zoom=max_zoom
+                )
 
                 if tile_data:
                     # Save to temp file

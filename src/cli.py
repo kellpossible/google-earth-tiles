@@ -91,6 +91,37 @@ def validate_config(config: Dict) -> None:
                 raise ValueError(f"Opacity must be between 0 and 100, got {layer['opacity']}")
             if 'blend_mode' in layer and layer['blend_mode'] not in ['normal', 'multiply', 'screen', 'overlay']:
                 raise ValueError(f"Invalid blend_mode: {layer['blend_mode']}")
+
+            # Validate LOD configuration
+            if 'lod_mode' in layer:
+                lod_mode = layer['lod_mode']
+                if lod_mode not in ['all_zooms', 'select_zooms']:
+                    raise ValueError(
+                        f"Invalid lod_mode for layer {layer['name']}: '{lod_mode}'. "
+                        f"Must be 'all_zooms' or 'select_zooms'"
+                    )
+
+                if lod_mode == 'select_zooms':
+                    if 'selected_zooms' not in layer:
+                        raise ValueError(
+                            f"Layer {layer['name']} has lod_mode='select_zooms' but no selected_zooms provided"
+                        )
+
+                    selected_zooms = layer['selected_zooms']
+                    if not isinstance(selected_zooms, list) or not selected_zooms:
+                        raise ValueError(
+                            f"Layer {layer['name']}: selected_zooms must be a non-empty list"
+                        )
+
+                    for zoom in selected_zooms:
+                        if not isinstance(zoom, int):
+                            raise ValueError(
+                                f"Layer {layer['name']}: all selected_zooms must be integers, got {type(zoom).__name__}"
+                            )
+                        if zoom < 0 or zoom > 18:
+                            raise ValueError(
+                                f"Layer {layer['name']}: zoom levels must be between 0 and 18, got {zoom}"
+                            )
         else:
             raise ValueError("Layer must be a string or dict")
 
