@@ -1,6 +1,6 @@
 """Layer composition model."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Any, Union
 
 from src.core.config import LayerConfig
@@ -71,3 +71,15 @@ class LayerComposition:
             opacity=opacity,
             blend_mode=blend_mode
         )
+
+    def copy(self) -> 'LayerComposition':
+        """
+        Create a copy of this layer composition.
+
+        Returns:
+            New LayerComposition instance with same values
+
+        Note:
+            LayerConfig is immutable (frozen), so shallow copy is safe
+        """
+        return replace(self)

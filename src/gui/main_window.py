@@ -32,40 +32,44 @@ from src.models.layer_composition import LayerComposition
 logger = logging.getLogger(__name__)
 
 
-class DownloadWorker(QThread):
-    """Worker thread for downloading tiles."""
+class ExportWorker(QThread):
+    """Worker thread for complete export: download tiles, composite, and create KMZ."""
 
     progress = pyqtSignal(int, int, str)  # current, total, message
-    finished = pyqtSignal(dict)  # layer_tiles_dict
+    finished = pyqtSignal(Path)  # output_path
     error = pyqtSignal(str)
 
     def __init__(
         self,
-        layers: List[LayerConfig],
+        layer_compositions: List[LayerComposition],
         extent: Extent,
         zoom: int,
+        output_path: str
     ):
         """
-        Initialize worker.
+        Initialize export worker.
 
         Args:
-            layers: List of layers to download
+            layer_compositions: Layer compositions with opacity/blend settings
             extent: Geographic extent
             zoom: Zoom level
+            output_path: Output KMZ path
         """
         super().__init__()
-        self.layers = layers
+        self.layer_compositions = layer_compositions
+        self.layers = [comp.layer_config for comp in layer_compositions]
         self.extent = extent
         self.zoom = zoom
+        self.output_path = output_path
         self.layer_tiles_dict = {}
 
     def run(self):
-        """Run the download process."""
+        """Run the complete export process."""
         try:
-            # Create temporary directory for tiles
+            # Phase 1: Download tiles
             temp_dir = Path(tempfile.mkdtemp())
 
-            # Calculate total tiles
+            # Calculate total work units
             tiles_per_layer = TileCalculator.get_tiles_in_extent(
                 self.extent.min_lon,
                 self.extent.min_lat,
@@ -74,14 +78,18 @@ class DownloadWorker(QThread):
                 self.zoom
             )
 
-            total_tiles = len(tiles_per_layer) * len(self.layers)
-            completed_tiles = 0
+            num_tiles = len(tiles_per_layer)
+            download_units = num_tiles * len(self.layers)
+            composite_units = num_tiles
+            total_units = download_units + composite_units
+
+            completed_units = 0
 
             # Download tiles for each layer
             for layer in self.layers:
                 self.progress.emit(
-                    completed_tiles,
-                    total_tiles,
+                    completed_units,
+                    total_units,
                     f"Downloading {layer.display_name}..."
                 )
 
@@ -97,18 +105,47 @@ class DownloadWorker(QThread):
                     layer,
                     tiles_xyz,
                     layer_dir,
-                    completed_tiles,
-                    total_tiles
+                    completed_units,
+                    total_units
                 ))
 
                 self.layer_tiles_dict[layer] = downloaded
-                completed_tiles += len(tiles_per_layer)
+                completed_units += num_tiles
 
-            self.progress.emit(total_tiles, total_tiles, "Download complete!")
-            self.finished.emit(self.layer_tiles_dict)
+            # Phase 2: Generate KMZ with compositing
+            self.progress.emit(
+                completed_units,
+                total_units,
+                "Starting KMZ generation..."
+            )
+
+            def kmz_progress(current: int, total: int, message: str):
+                """Translate KMZ progress to overall progress."""
+                # Map composite progress to our overall progress
+                progress_in_phase = int((current / total) * composite_units) if total > 0 else 0
+                self.progress.emit(
+                    download_units + progress_in_phase,
+                    total_units,
+                    message
+                )
+
+            generator = KMZGenerator(Path(self.output_path), kmz_progress)
+            result_path = generator.create_kmz(
+                self.layer_tiles_dict,
+                self.zoom,
+                self.layer_compositions
+            )
+
+            # Cleanup temp files
+            for layer, tiles in self.layer_tiles_dict.items():
+                for tile_path, x, y, z in tiles:
+                    if tile_path.exists():
+                        tile_path.unlink()
+
+            self.finished.emit(result_path)
 
         except Exception as e:
-            logger.exception("Error during download")
+            logger.exception("Error during export")
             self.error.emit(str(e))
 
     async def _download_layer_tiles(
@@ -116,24 +153,17 @@ class DownloadWorker(QThread):
         layer: LayerConfig,
         tiles: List[tuple],
         output_dir: Path,
-        offset: int,
-        total: int
+        base_progress: int,
+        total_progress: int
     ):
-        """
-        Download tiles for a layer.
-
-        Args:
-            layer: Layer configuration
-            tiles: List of (x, y, z) tuples
-            output_dir: Output directory
-            offset: Offset for progress reporting
-            total: Total tiles across all layers
-
-        Returns:
-            List of downloaded tiles
-        """
-        def progress_callback(current, layer_total):
-            self.progress.emit(offset + current, total, f"Downloading {layer.display_name}...")
+        """Download tiles for a single layer with progress reporting."""
+        def progress_callback(current: int, total: int):
+            """Progress callback for download."""
+            self.progress.emit(
+                base_progress + current,
+                total_progress,
+                f"Downloading {layer.display_name}... ({current}/{total})"
+            )
 
         async with WMTSClient(layer) as client:
             downloaded = await client.download_tiles_batch(
@@ -151,8 +181,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         """Initialize main window."""
         super().__init__()
-        self.download_worker = None
-        self.pending_kmz_data = None
+        self.export_worker = None
 
         # File operations handler
         self.file_ops = FileOperations(self)
@@ -336,7 +365,7 @@ class MainWindow(QMainWindow):
         output_path: str
     ):
         """
-        Start downloading tiles.
+        Start export process (download + composite + KMZ creation).
 
         Args:
             layer_compositions: List of LayerComposition objects
@@ -344,8 +373,9 @@ class MainWindow(QMainWindow):
             zoom: Zoom level
             output_path: Output KMZ path
         """
-        # Extract layers for download
-        layers = [comp.layer_config for comp in layer_compositions]
+        # Create defensive copies to isolate from UI mutations during export
+        extent_copy = extent.copy()
+        layer_compositions_copy = [comp.copy() for comp in layer_compositions]
 
         # Disable generate button
         self.settings_panel.generate_button.setEnabled(False)
@@ -354,15 +384,17 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
 
-        # Store output path and compositions for later
-        self.pending_kmz_data = (zoom, output_path, layer_compositions)
-
-        # Create and start worker
-        self.download_worker = DownloadWorker(layers, extent, zoom)
-        self.download_worker.progress.connect(self.update_progress)
-        self.download_worker.finished.connect(self.on_download_finished)
-        self.download_worker.error.connect(self.on_download_error)
-        self.download_worker.start()
+        # Create and start unified export worker
+        self.export_worker = ExportWorker(
+            layer_compositions_copy,
+            extent_copy,
+            zoom,
+            output_path
+        )
+        self.export_worker.progress.connect(self.update_progress)
+        self.export_worker.finished.connect(self.on_export_finished)
+        self.export_worker.error.connect(self.on_export_error)
+        self.export_worker.start()
 
     def update_progress(self, current: int, total: int, message: str):
         """
@@ -377,68 +409,40 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(current)
         self.status_bar.showMessage(f"{message} ({current}/{total})")
 
-    def on_download_finished(self, layer_tiles_dict: Dict):
+    def on_export_finished(self, result_path: Path):
         """
-        Handle download completion.
+        Handle export completion.
 
         Args:
-            layer_tiles_dict: Downloaded tiles by layer
+            result_path: Path to created KMZ file
         """
-        zoom, output_path, layer_compositions = self.pending_kmz_data
+        # Show success message
+        QMessageBox.information(
+            self,
+            "Success",
+            f"KMZ file created successfully!\n\nSaved to: {result_path}"
+        )
 
-        self.status_bar.showMessage("Generating KMZ file...")
+        self.status_bar.showMessage("Ready")
+        self.progress_bar.setVisible(False)
+        self.settings_panel.generate_button.setEnabled(True)
 
-        try:
-            # Generate KMZ (TODO: Update to use layer_compositions for blending/opacity)
-            generator = KMZGenerator(Path(output_path))
-            result_path = generator.create_kmz(layer_tiles_dict, zoom, layer_compositions)
-
-            # Cleanup temp files
-            for layer, tiles in layer_tiles_dict.items():
-                for tile_path, x, y, z in tiles:
-                    if tile_path.exists():
-                        tile_path.unlink()
-
-            # Show success message
-            QMessageBox.information(
-                self,
-                "Success",
-                f"KMZ file created successfully!\n\nSaved to: {result_path}"
-            )
-
-            self.status_bar.showMessage("Ready")
-
-        except Exception as e:
-            logger.exception("Error generating KMZ")
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to generate KMZ file:\n{str(e)}"
-            )
-            self.status_bar.showMessage("Error generating KMZ")
-
-        finally:
-            self.progress_bar.setVisible(False)
-            self.settings_panel.generate_button.setEnabled(True)
-            self.pending_kmz_data = None
-
-    def on_download_error(self, error_message: str):
+    def on_export_error(self, error_message: str):
         """
-        Handle download error.
+        Handle export error.
 
         Args:
             error_message: Error message
         """
         QMessageBox.critical(
             self,
-            "Download Error",
-            f"Failed to download tiles:\n{error_message}"
+            "Export Error",
+            f"Failed to export KMZ:\n{error_message}"
         )
 
         self.progress_bar.setVisible(False)
         self.settings_panel.generate_button.setEnabled(True)
-        self.status_bar.showMessage("Download failed")
-        self.pending_kmz_data = None
+        self.status_bar.showMessage("Export failed")
 
     def _create_menu_bar(self):
         """Create the menu bar with File menu."""

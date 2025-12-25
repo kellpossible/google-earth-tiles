@@ -21,16 +21,18 @@ logger = logging.getLogger(__name__)
 class KMZGenerator:
     """Generator for KMZ files with composited layers."""
 
-    def __init__(self, output_path: Path):
+    def __init__(self, output_path: Path, progress_callback=None):
         """
         Initialize KMZ generator.
 
         Args:
             output_path: Path for output KMZ file
+            progress_callback: Optional callback(current, total, message) for progress updates
         """
         self.output_path = Path(output_path)
         self.kml = simplekml.Kml()
         self.compositor = TileCompositor()
+        self.progress_callback = progress_callback
 
     async def create_kmz_async(
         self,
@@ -70,7 +72,12 @@ class KMZGenerator:
 
             # Composite each tile
             composited_tiles = []
-            for x, y, z in tile_coords:
+            total_tiles = len(tile_coords)
+            for i, (x, y, z) in enumerate(tile_coords):
+                # Report progress
+                if self.progress_callback:
+                    self.progress_callback(i, total_tiles, f"Compositing tile {i+1}/{total_tiles}...")
+
                 # Composite tile using the same logic as preview
                 tile_data = await self.compositor.composite_tile(x, y, z, layer_compositions)
 
@@ -80,6 +87,10 @@ class KMZGenerator:
                     with open(tile_path, 'wb') as f:
                         f.write(tile_data)
                     composited_tiles.append((tile_path, x, y, z))
+
+            # Report compositing completion
+            if self.progress_callback:
+                self.progress_callback(total_tiles, total_tiles, "Creating KMZ archive...")
 
             # Create temporary KML file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.kml', delete=False) as kml_file:

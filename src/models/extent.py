@@ -1,6 +1,6 @@
 """Data model for geographic extents."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict
 
 from src.core.config import JAPAN_REGION_BOUNDS
@@ -90,3 +90,12 @@ class Extent:
             max_lon=data['max_lon'],
             max_lat=data['max_lat'],
         )
+
+    def copy(self) -> 'Extent':
+        """
+        Create a copy of this extent.
+
+        Returns:
+            New Extent instance with same values
+        """
+        return replace(self)
