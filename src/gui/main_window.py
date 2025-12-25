@@ -27,6 +27,7 @@ from src.gui.file_operations import FileOperations
 from src.gui.map_widget import MapWidget
 from src.gui.settings_panel import SettingsPanel
 from src.models.extent import Extent
+from src.models.generation_request import GenerationRequest
 from src.models.layer_composition import LayerComposition
 
 logger = logging.getLogger(__name__)
@@ -39,28 +40,16 @@ class ExportWorker(QThread):
     finished = pyqtSignal(Path)  # output_path
     error = pyqtSignal(str)
 
-    def __init__(
-        self,
-        layer_compositions: List[LayerComposition],
-        extent: Extent,
-        zoom: int,
-        output_path: str
-    ):
+    def __init__(self, request: GenerationRequest):
         """
         Initialize export worker.
 
         Args:
-            layer_compositions: Layer compositions with opacity/blend settings
-            extent: Geographic extent
-            zoom: Zoom level
-            output_path: Output KMZ path
+            request: Generation request with all parameters
         """
         super().__init__()
-        self.layer_compositions = layer_compositions
-        self.layers = [comp.layer_config for comp in layer_compositions]
-        self.extent = extent
-        self.zoom = zoom
-        self.output_path = output_path
+        self.request = request.copy()  # Defensive copy
+        self.layers = [comp.layer_config for comp in request.layer_compositions]
         self.layer_tiles_dict = {}
 
     def run(self):
@@ -69,20 +58,39 @@ class ExportWorker(QThread):
             # Phase 1: Download tiles
             temp_dir = Path(tempfile.mkdtemp())
 
-            # Calculate total work units
+            # Calculate total work units across all phases
+            min_zoom = self.request.min_zoom
+            max_zoom = self.request.max_zoom
+
+            # Phase 1: Download tiles at max zoom only
             tiles_per_layer = TileCalculator.get_tiles_in_extent(
-                self.extent.min_lon,
-                self.extent.min_lat,
-                self.extent.max_lon,
-                self.extent.max_lat,
-                self.zoom
+                self.request.extent.min_lon,
+                self.request.extent.min_lat,
+                self.request.extent.max_lon,
+                self.request.extent.max_lat,
+                max_zoom
             )
 
-            num_tiles = len(tiles_per_layer)
-            download_units = num_tiles * len(self.layers)
-            composite_units = num_tiles
-            total_units = download_units + composite_units
+            num_max_tiles = len(tiles_per_layer)
+            download_units = num_max_tiles * len(self.layers)
 
+            # Phase 2: Composite at max zoom
+            composite_units = num_max_tiles
+
+            # Phase 3: LOD downsampling (if multi-zoom)
+            lod_units = 0
+            if min_zoom < max_zoom:
+                for zoom in range(max_zoom - 1, min_zoom - 1, -1):
+                    tiles_at_zoom = TileCalculator.get_tiles_in_extent(
+                        self.request.extent.min_lon,
+                        self.request.extent.min_lat,
+                        self.request.extent.max_lon,
+                        self.request.extent.max_lat,
+                        zoom
+                    )
+                    lod_units += len(tiles_at_zoom)
+
+            total_units = download_units + composite_units + lod_units + 1
             completed_units = 0
 
             # Download tiles for each layer
@@ -98,7 +106,7 @@ class ExportWorker(QThread):
                 layer_dir.mkdir(exist_ok=True)
 
                 # Convert tiles to (x, y, z) format
-                tiles_xyz = [(x, y, self.zoom) for x, y in tiles_per_layer]
+                tiles_xyz = [(x, y, max_zoom) for x, y in tiles_per_layer]
 
                 # Download tiles
                 downloaded = asyncio.run(self._download_layer_tiles(
@@ -110,30 +118,30 @@ class ExportWorker(QThread):
                 ))
 
                 self.layer_tiles_dict[layer] = downloaded
-                completed_units += num_tiles
+                completed_units += num_max_tiles
 
-            # Phase 2: Generate KMZ with compositing
+            # Phase 2 & 3: Generate KMZ with compositing and LOD
+            is_multi_zoom = min_zoom < max_zoom
             self.progress.emit(
                 completed_units,
                 total_units,
-                "Starting KMZ generation..."
+                "Generating KMZ with LOD pyramid..." if is_multi_zoom else "Generating KMZ..."
             )
 
             def kmz_progress(current: int, total: int, message: str):
                 """Translate KMZ progress to overall progress."""
-                # Map composite progress to our overall progress
-                progress_in_phase = int((current / total) * composite_units) if total > 0 else 0
                 self.progress.emit(
-                    download_units + progress_in_phase,
+                    download_units + current,
                     total_units,
                     message
                 )
 
-            generator = KMZGenerator(Path(self.output_path), kmz_progress)
+            generator = KMZGenerator(self.request.output_path, kmz_progress)
             result_path = generator.create_kmz(
                 self.layer_tiles_dict,
-                self.zoom,
-                self.layer_compositions
+                min_zoom,
+                max_zoom,
+                self.request.layer_compositions
             )
 
             # Cleanup temp files
@@ -221,7 +229,7 @@ class MainWindow(QMainWindow):
 
         # Right side: Settings panel (30% width)
         self.settings_panel = SettingsPanel()
-        self.settings_panel.setMaximumWidth(400)
+        self.settings_panel.setMaximumWidth(500)
         main_layout.addWidget(self.settings_panel, 3)
 
         central_widget.setLayout(main_layout)
@@ -292,24 +300,15 @@ class MainWindow(QMainWindow):
             self.pending_refresh_needed = False
             self._do_map_update_no_zoom()
 
-    def on_generate_clicked(
-        self,
-        layer_compositions: List[LayerComposition],
-        zoom: int,
-        extent: Extent,
-        output_path: str
-    ):
+    def on_generate_clicked(self, request: GenerationRequest):
         """
         Handle generate button click.
 
         Args:
-            layer_compositions: List of LayerComposition objects
-            zoom: Zoom level
-            extent: Geographic extent
-            output_path: Output KMZ path
+            request: Generation request with all parameters
         """
         # Validate extent is within Japan region
-        if not extent.is_within_japan_region():
+        if not request.extent.is_within_japan_region():
             QMessageBox.critical(
                 self,
                 "Invalid Extent",
@@ -319,7 +318,7 @@ class MainWindow(QMainWindow):
             return
 
         # Warn if partially outside
-        if not extent.is_fully_within_japan_region():
+        if not request.extent.is_fully_within_japan_region():
             reply = QMessageBox.warning(
                 self,
                 "Extent Warning",
@@ -331,15 +330,17 @@ class MainWindow(QMainWindow):
                 return
 
         # Extract just the layer configs for download
-        layers = [comp.layer_config for comp in layer_compositions]
+        layers = [comp.layer_config for comp in request.layer_compositions]
 
-        # Calculate total tiles
-        tile_count = TileCalculator.estimate_tile_count(
-            extent.min_lon, extent.min_lat,
-            extent.max_lon, extent.max_lat,
-            zoom
-        )
-        total_tiles = tile_count * len(layers)
+        # Calculate total tiles across all zoom levels
+        total_tiles = 0
+        for zoom_level in range(request.min_zoom, request.max_zoom + 1):
+            tile_count = TileCalculator.estimate_tile_count(
+                request.extent.min_lon, request.extent.min_lat,
+                request.extent.max_lon, request.extent.max_lat,
+                zoom_level
+            )
+            total_tiles += tile_count * len(layers)
 
         # Warn if large download
         if total_tiles > 1000:
@@ -355,28 +356,15 @@ class MainWindow(QMainWindow):
                 return
 
         # Start download
-        self.start_download(layer_compositions, extent, zoom, output_path)
+        self.start_download(request)
 
-    def start_download(
-        self,
-        layer_compositions: List[LayerComposition],
-        extent: Extent,
-        zoom: int,
-        output_path: str
-    ):
+    def start_download(self, request: GenerationRequest):
         """
         Start export process (download + composite + KMZ creation).
 
         Args:
-            layer_compositions: List of LayerComposition objects
-            extent: Geographic extent
-            zoom: Zoom level
-            output_path: Output KMZ path
+            request: Generation request with all parameters
         """
-        # Create defensive copies to isolate from UI mutations during export
-        extent_copy = extent.copy()
-        layer_compositions_copy = [comp.copy() for comp in layer_compositions]
-
         # Disable generate button
         self.settings_panel.generate_button.setEnabled(False)
 
@@ -385,12 +373,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
 
         # Create and start unified export worker
-        self.export_worker = ExportWorker(
-            layer_compositions_copy,
-            extent_copy,
-            zoom,
-            output_path
-        )
+        # Note: ExportWorker creates defensive copy via request.copy()
+        self.export_worker = ExportWorker(request)
         self.export_worker.progress.connect(self.update_progress)
         self.export_worker.finished.connect(self.on_export_finished)
         self.export_worker.error.connect(self.on_export_error)

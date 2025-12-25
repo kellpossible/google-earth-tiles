@@ -54,7 +54,7 @@ def validate_config(config: Dict) -> None:
     Raises:
         ValueError: If configuration is invalid
     """
-    required_keys = ['extent', 'zoom', 'output', 'layers']
+    required_keys = ['extent', 'min_zoom', 'max_zoom', 'output', 'layers']
 
     for key in required_keys:
         if key not in config:
@@ -94,9 +94,22 @@ def validate_config(config: Dict) -> None:
         else:
             raise ValueError("Layer must be a string or dict")
 
-    # Validate zoom
-    if not isinstance(config['zoom'], int):
-        raise ValueError("Zoom must be an integer")
+    # Validate zoom configuration
+    min_zoom = config['min_zoom']
+    max_zoom = config['max_zoom']
+
+    if not isinstance(min_zoom, int):
+        raise ValueError("min_zoom must be an integer")
+    if not isinstance(max_zoom, int):
+        raise ValueError("max_zoom must be an integer")
+
+    if min_zoom < 0 or min_zoom > 18:
+        raise ValueError(f"min_zoom must be between 0 and 18, got {min_zoom}")
+    if max_zoom < 0 or max_zoom > 18:
+        raise ValueError(f"max_zoom must be between 0 and 18, got {max_zoom}")
+
+    if min_zoom > max_zoom:
+        raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
 
 
 async def download_tiles(
@@ -205,9 +218,17 @@ def run_cli(config_path: str) -> int:
                 "Some tiles may not be available."
             )
 
-        zoom = config['zoom']
         output_path = Path(config['output'])
         layer_specs = config['layers']
+
+        # Parse zoom configuration
+        min_zoom = config['min_zoom']
+        max_zoom = config['max_zoom']
+
+        if min_zoom < max_zoom:
+            logger.info(f"Multi-zoom enabled: zoom {min_zoom} to {max_zoom}")
+        else:
+            logger.info(f"Single zoom level: {max_zoom}")
 
         # Parse layer specifications (support both string and dict formats)
         layer_compositions = []
@@ -235,51 +256,66 @@ def run_cli(config_path: str) -> int:
             layers.append(layer_config)
 
         # Validate zoom range for selected layers
-        min_zoom = max(layer.min_zoom for layer in layers)
-        max_zoom = min(layer.max_zoom for layer in layers)
+        layer_min_zoom = max(layer.min_zoom for layer in layers)
+        layer_max_zoom = min(layer.max_zoom for layer in layers)
 
-        # Clamp zoom to valid range
-        original_zoom = zoom
-        if zoom < min_zoom:
-            zoom = min_zoom
+        # Clamp zoom range to valid layer range
+        original_min = min_zoom
+        original_max = max_zoom
+
+        min_zoom = max(min_zoom, layer_min_zoom)
+        max_zoom = min(max_zoom, layer_max_zoom)
+
+        if min_zoom != original_min or max_zoom != original_max:
             logger.warning(
-                f"Zoom level {original_zoom} is below minimum for selected layers. "
-                f"Clamping to {min_zoom}"
-            )
-        elif zoom > max_zoom:
-            zoom = max_zoom
-            logger.warning(
-                f"Zoom level {original_zoom} is above maximum for selected layers. "
-                f"Clamping to {max_zoom}"
+                f"Zoom range {original_min}-{original_max} adjusted to {min_zoom}-{max_zoom} "
+                f"to match layer capabilities"
             )
 
-        # Calculate estimates
-        tile_count = TileCalculator.estimate_tile_count(
-            extent.min_lon, extent.min_lat,
-            extent.max_lon, extent.max_lat,
-            zoom
-        )
-        total_tiles = tile_count * len(layers)
+        if min_zoom > max_zoom:
+            logger.error(
+                f"No valid zoom range for selected layers. "
+                f"Layer range: {layer_min_zoom}-{layer_max_zoom}"
+            )
+            return 1
+
+        # Calculate estimates across all zoom levels
+        total_tiles = 0
+        for zoom_level in range(min_zoom, max_zoom + 1):
+            tile_count = TileCalculator.estimate_tile_count(
+                extent.min_lon, extent.min_lat,
+                extent.max_lon, extent.max_lat,
+                zoom_level
+            )
+            total_tiles += tile_count * len(layers)
 
         # Build layer names for display
         layer_names = [comp.layer_config.name for comp in layer_compositions]
 
         logger.info(f"Configuration:")
         logger.info(f"  Layers: {', '.join(layer_names)}")
-        logger.info(f"  Zoom: {zoom}")
+        if min_zoom == max_zoom:
+            logger.info(f"  Zoom: {max_zoom}")
+        else:
+            logger.info(f"  Zoom range: {min_zoom}-{max_zoom} ({max_zoom - min_zoom + 1} levels)")
         logger.info(f"  Extent: {extent.min_lon:.4f}, {extent.min_lat:.4f} to "
                    f"{extent.max_lon:.4f}, {extent.max_lat:.4f}")
         logger.info(f"  Total tiles: {total_tiles:,}")
         logger.info(f"  Output: {output_path}")
 
-        # Download tiles
-        logger.info("Starting download...")
-        layer_tiles_dict = asyncio.run(download_tiles(layers, extent, zoom))
+        # Download tiles at max zoom level only
+        logger.info(f"Downloading tiles at zoom {max_zoom}...")
+        layer_tiles_dict = asyncio.run(download_tiles(layers, extent, max_zoom))
 
         # Generate KMZ
         logger.info("Generating KMZ file...")
         generator = KMZGenerator(output_path)
-        result_path = generator.create_kmz(layer_tiles_dict, zoom, layer_compositions)
+        result_path = generator.create_kmz(
+            layer_tiles_dict,
+            min_zoom,
+            max_zoom,
+            layer_compositions
+        )
 
         # Cleanup temp files
         logger.info("Cleaning up temporary files...")

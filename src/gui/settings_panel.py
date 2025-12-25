@@ -30,7 +30,9 @@ from PyQt6.QtWidgets import (
 
 from src.core.config import DEFAULT_ZOOM, LAYERS, CATEGORIES, LayerConfig
 from src.core.tile_calculator import TileCalculator
+from src.gui.zoom_range_widget import ZoomRangeWidget
 from src.models.extent import Extent
+from src.models.generation_request import GenerationRequest
 from src.models.layer_composition import LayerComposition
 
 
@@ -367,7 +369,7 @@ class AddLayerDialog(QDialog):
 class SettingsPanel(QWidget):
     """Panel for configuring download settings."""
 
-    generate_requested = pyqtSignal(list, int, object, str)  # List[LayerComposition], zoom, extent, output_path
+    generate_requested = pyqtSignal(object)  # GenerationRequest
     changed = pyqtSignal()  # Emitted when layer list changes (add/remove/reorder) - updates zoom limits
     settings_changed_no_zoom = pyqtSignal()  # Emitted when layer settings change (opacity/blend) - no zoom update
     sync_preview_zoom_requested = pyqtSignal(int)  # Emitted when user wants to sync preview zoom to output zoom
@@ -405,36 +407,43 @@ class SettingsPanel(QWidget):
         layout.addWidget(layer_group)
 
         # Zoom level
-        zoom_group = QGroupBox("Zoom Level")
-        zoom_layout = QFormLayout()
+        zoom_group = QGroupBox("Zoom Range")
+        zoom_layout = QVBoxLayout()
 
-        # Output zoom
-        output_zoom_row = QHBoxLayout()
-        self.zoom_spinner = QSpinBox()
-        self.zoom_spinner.setMinimum(2)
-        self.zoom_spinner.setMaximum(18)
-        self.zoom_spinner.setValue(DEFAULT_ZOOM)
-        self.zoom_spinner.valueChanged.connect(self._on_zoom_changed)
-        output_zoom_row.addWidget(self.zoom_spinner)
-        output_zoom_row.addStretch()
+        # Zoom range widget
+        self.zoom_range_widget = ZoomRangeWidget()
+        self.zoom_range_widget.set_range(2, 18)  # Will be updated when layers change
+        self.zoom_range_widget.set_value(DEFAULT_ZOOM, DEFAULT_ZOOM)  # Start with single zoom
+        self.zoom_range_widget.valueChanged.connect(self._on_zoom_range_changed)
+        zoom_layout.addWidget(self.zoom_range_widget)
 
-        zoom_layout.addRow("Output Zoom:", output_zoom_row)
+        # Zoom display label
+        self.zoom_display_label = QLabel(f"Zoom: {DEFAULT_ZOOM}")
+        self.zoom_display_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        zoom_layout.addWidget(self.zoom_display_label)
+
+        # Additional info layout
+        info_layout = QFormLayout()
+
+        # Zoom range info
         self.zoom_range_label = QLabel("Range: 2-18")
-        zoom_layout.addRow("", self.zoom_range_label)
+        info_layout.addRow("Valid Range:", self.zoom_range_label)
 
         # Preview zoom display
         preview_zoom_row = QHBoxLayout()
         self.preview_zoom_label = QLabel("-")
         preview_zoom_row.addWidget(self.preview_zoom_label)
 
-        self.sync_zoom_button = QPushButton("↻ Sync to Output")
+        self.sync_zoom_button = QPushButton("↻ Sync to Max Zoom")
         self.sync_zoom_button.setVisible(False)
-        self.sync_zoom_button.setToolTip("Set preview zoom to match output zoom")
+        self.sync_zoom_button.setToolTip("Set preview zoom to match maximum output zoom")
         self.sync_zoom_button.clicked.connect(self._on_sync_zoom_clicked)
         preview_zoom_row.addWidget(self.sync_zoom_button)
         preview_zoom_row.addStretch()
 
-        zoom_layout.addRow("Preview Zoom:", preview_zoom_row)
+        info_layout.addRow("Preview Zoom:", preview_zoom_row)
+
+        zoom_layout.addLayout(info_layout)
 
         zoom_group.setLayout(zoom_layout)
         layout.addWidget(zoom_group)
@@ -634,8 +643,16 @@ class SettingsPanel(QWidget):
         self._on_layer_changed()
         self.changed.emit()
 
-    def _on_zoom_changed(self):
-        """Handle output zoom level change."""
+    def _on_zoom_range_changed(self, value):
+        """Handle zoom range slider change."""
+        min_zoom, max_zoom = value
+
+        # Update display label
+        if min_zoom == max_zoom:
+            self.zoom_display_label.setText(f"Zoom: {max_zoom}")
+        else:
+            self.zoom_display_label.setText(f"Zoom: {min_zoom}-{max_zoom} ({max_zoom - min_zoom + 1} levels)")
+
         self._update_estimates()
         self._update_sync_button_visibility()
         self._emit_state_changed()
@@ -652,43 +669,39 @@ class SettingsPanel(QWidget):
         self._update_sync_button_visibility()
 
     def _update_sync_button_visibility(self):
-        """Show/hide sync button based on whether preview zoom differs from output zoom."""
+        """Show/hide sync button based on whether preview zoom differs from max zoom."""
         if self.current_preview_zoom is None:
             self.sync_zoom_button.setVisible(False)
         else:
-            output_zoom = self.zoom_spinner.value()
-            self.sync_zoom_button.setVisible(self.current_preview_zoom != output_zoom)
+            _, max_zoom = self.zoom_range_widget.value()
+            self.sync_zoom_button.setVisible(self.current_preview_zoom != max_zoom)
 
     def _on_sync_zoom_clicked(self):
         """Handle sync zoom button click."""
-        output_zoom = self.zoom_spinner.value()
-        self.sync_preview_zoom_requested.emit(output_zoom)
+        _, max_zoom = self.zoom_range_widget.value()
+        self.sync_preview_zoom_requested.emit(max_zoom)
+
 
     def _update_zoom_range(self):
         """Update zoom range based on enabled layers."""
         enabled_layers = self.get_enabled_layers()
         if not enabled_layers:
-            self.zoom_range_label.setText("Range: -")
+            self.zoom_range_label.setText("-")
             return
 
         # Find intersection of zoom ranges
-        min_zoom = max(layer.min_zoom for layer in enabled_layers)
-        max_zoom = min(layer.max_zoom for layer in enabled_layers)
+        layer_min_zoom = max(layer.min_zoom for layer in enabled_layers)
+        layer_max_zoom = min(layer.max_zoom for layer in enabled_layers)
 
-        if min_zoom > max_zoom:
+        if layer_min_zoom > layer_max_zoom:
             self.zoom_range_label.setText(f"<font color='red'>No compatible zoom range!</font>")
-            self.zoom_spinner.setEnabled(False)
+            self.zoom_range_widget.setEnabled(False)
         else:
-            self.zoom_range_label.setText(f"Range: {min_zoom}-{max_zoom}")
-            self.zoom_spinner.setMinimum(min_zoom)
-            self.zoom_spinner.setMaximum(max_zoom)
-            self.zoom_spinner.setEnabled(True)
+            self.zoom_range_label.setText(f"{layer_min_zoom}-{layer_max_zoom}")
 
-            # Adjust current value if out of range
-            if self.zoom_spinner.value() < min_zoom:
-                self.zoom_spinner.setValue(min_zoom)
-            elif self.zoom_spinner.value() > max_zoom:
-                self.zoom_spinner.setValue(max_zoom)
+            # Update widget range (this will clamp current selection)
+            self.zoom_range_widget.set_range(layer_min_zoom, layer_max_zoom)
+            self.zoom_range_widget.setEnabled(True)
 
     def _browse_output_path(self):
         """Open file dialog to select output path."""
@@ -754,27 +767,33 @@ class SettingsPanel(QWidget):
             self.size_estimate_label.setText("Size: -")
             return
 
-        zoom = self.zoom_spinner.value()
+        min_zoom, max_zoom = self.zoom_range_widget.value()
 
-        # Calculate tiles for one layer
-        tile_count = TileCalculator.estimate_tile_count(
-            self.current_extent.min_lon,
-            self.current_extent.min_lat,
-            self.current_extent.max_lon,
-            self.current_extent.max_lat,
-            zoom
-        )
-
-        # Multiply by number of enabled layers
-        total_tiles = tile_count * len(enabled_layers)
-
-        # Estimate size (sum across enabled layers)
+        # Calculate for all zoom levels in range
+        total_tiles = 0
         total_size_mb = 0
-        for layer in enabled_layers:
-            size_mb = TileCalculator.estimate_download_size(tile_count, layer.extension)
-            total_size_mb += size_mb
 
-        self.tile_count_label.setText(f"Tiles: {total_tiles:,}")
+        for zoom in range(min_zoom, max_zoom + 1):
+            tile_count = TileCalculator.estimate_tile_count(
+                self.current_extent.min_lon,
+                self.current_extent.min_lat,
+                self.current_extent.max_lon,
+                self.current_extent.max_lat,
+                zoom
+            )
+            total_tiles += tile_count
+
+            for layer in enabled_layers:
+                size_mb = TileCalculator.estimate_download_size(tile_count, layer.extension)
+                total_size_mb += size_mb
+
+        # Display differently for single vs multi-zoom
+        zoom_levels = max_zoom - min_zoom + 1
+        if zoom_levels == 1:
+            self.tile_count_label.setText(f"Tiles: {total_tiles:,}")
+        else:
+            self.tile_count_label.setText(f"Tiles: {total_tiles:,} ({zoom_levels} zoom levels)")
+
         self.size_estimate_label.setText(f"Size: ~{total_size_mb:.1f} MB")
 
     def _update_generate_button(self):
@@ -788,15 +807,19 @@ class SettingsPanel(QWidget):
     def _on_generate_clicked(self):
         """Handle generate button click."""
         layer_compositions = self.get_layer_compositions()
-        zoom = self.zoom_spinner.value()
+        min_zoom, max_zoom = self.zoom_range_widget.value()
         output_path = self.output_path_edit.text()
 
-        self.generate_requested.emit(
-            layer_compositions,
-            zoom,
-            self.current_extent,
-            output_path
+        # Create generation request
+        request = GenerationRequest(
+            layer_compositions=layer_compositions,
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
+            extent=self.current_extent,
+            output_path=output_path
         )
+
+        self.generate_requested.emit(request)
 
     def get_enabled_layers(self) -> List[LayerConfig]:
         """
@@ -829,7 +852,7 @@ class SettingsPanel(QWidget):
         Get complete UI state as dictionary (for YAML serialization).
 
         Returns:
-            Dictionary with extent, zoom, output, and layers keys
+            Dictionary with extent, min_zoom, max_zoom, output, and layers keys
 
         Raises:
             ValueError: If extent is not set
@@ -840,20 +863,24 @@ class SettingsPanel(QWidget):
         # Get layers in compositing order (same as used for rendering)
         # This is bottom-to-top, which is what the CLI expects
         layer_compositions = self.get_layer_compositions()
+        min_zoom, max_zoom = self.zoom_range_widget.value()
 
-        return {
+        state = {
             'extent': self.current_extent.to_dict(),
-            'zoom': self.zoom_spinner.value(),
+            'min_zoom': min_zoom,
+            'max_zoom': max_zoom,
             'output': self.output_path_edit.text(),
             'layers': [comp.to_dict() for comp in layer_compositions]
         }
+
+        return state
 
     def load_state_dict(self, state: dict) -> None:
         """
         Load complete UI state from dictionary (loaded from YAML).
 
         Args:
-            state: Dictionary with extent, zoom, output, and layers keys
+            state: Dictionary with extent, min_zoom, max_zoom, output, and layers keys
 
         Raises:
             ValueError: If state is invalid
@@ -877,8 +904,10 @@ class SettingsPanel(QWidget):
                     comp.blend_mode
                 )
 
-            # 3. Set zoom
-            self.zoom_spinner.setValue(state['zoom'])
+            # 3. Set zoom range
+            min_zoom = state['min_zoom']
+            max_zoom = state['max_zoom']
+            self.zoom_range_widget.set_value(min_zoom, max_zoom)
 
             # 4. Set output path
             self.output_path_edit.setText(state['output'])
