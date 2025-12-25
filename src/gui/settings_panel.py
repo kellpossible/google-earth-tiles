@@ -371,6 +371,8 @@ class SettingsPanel(QWidget):
     changed = pyqtSignal()  # Emitted when layer list changes (add/remove/reorder) - updates zoom limits
     settings_changed_no_zoom = pyqtSignal()  # Emitted when layer settings change (opacity/blend) - no zoom update
     sync_preview_zoom_requested = pyqtSignal(int)  # Emitted when user wants to sync preview zoom to output zoom
+    state_changed = pyqtSignal()  # Emitted when ANY state changes (for dirty tracking)
+    extent_loaded = pyqtSignal(object)  # Emitted when extent is loaded from file (for setting on map)
 
     def __init__(self):
         """Initialize settings panel."""
@@ -378,6 +380,7 @@ class SettingsPanel(QWidget):
         self.current_extent: Optional[Extent] = None
         self.layer_widgets: List[LayerItemWidget] = []
         self.current_preview_zoom: Optional[int] = None
+        self._suppress_state_changes = False
         self.init_ui()
 
     def init_ui(self):
@@ -443,6 +446,7 @@ class SettingsPanel(QWidget):
         path_layout = QHBoxLayout()
         self.output_path_edit = QLineEdit()
         self.output_path_edit.setPlaceholderText("Select output KMZ file...")
+        self.output_path_edit.textChanged.connect(self._emit_state_changed)
         self.browse_button = QPushButton("Browse...")
         self.browse_button.clicked.connect(self._browse_output_path)
 
@@ -521,6 +525,7 @@ class SettingsPanel(QWidget):
         self.changed.emit()  # Trigger map preview update WITH zoom limit update
         self._update_estimates()
         self._update_move_buttons()
+        self._emit_state_changed()
 
     def _on_layer_settings_changed(self):
         """Handle layer settings change (opacity/blend) - no zoom limit update needed."""
@@ -541,6 +546,7 @@ class SettingsPanel(QWidget):
 
             self._update_move_buttons()
             self.changed.emit()
+            self._emit_state_changed()
 
     def _move_layer_down(self, widget: LayerItemWidget):
         """Move layer down in the composition order."""
@@ -556,6 +562,7 @@ class SettingsPanel(QWidget):
 
             self._update_move_buttons()
             self.changed.emit()
+            self._emit_state_changed()
 
     def _update_move_buttons(self):
         """Update enabled state of move up/down buttons."""
@@ -596,6 +603,7 @@ class SettingsPanel(QWidget):
         layer_widget.moved_up.connect(lambda w=layer_widget: self._move_layer_up(w))
         layer_widget.moved_down.connect(lambda w=layer_widget: self._move_layer_down(w))
         layer_widget.changed.connect(self._on_layer_settings_changed)
+        layer_widget.changed.connect(self._emit_state_changed)
         layer_widget.remove_requested.connect(lambda w=layer_widget: self.remove_layer(w))
 
         # Add to list and layout (before the stretch)
@@ -630,6 +638,7 @@ class SettingsPanel(QWidget):
         """Handle output zoom level change."""
         self._update_estimates()
         self._update_sync_button_visibility()
+        self._emit_state_changed()
 
     def update_preview_zoom(self, zoom: int):
         """
@@ -710,6 +719,15 @@ class SettingsPanel(QWidget):
 
         self._update_estimates()
         self._update_generate_button()
+
+        # Only emit if not during load
+        if not self._suppress_state_changes:
+            self.state_changed.emit()
+
+    def _emit_state_changed(self):
+        """Emit state_changed signal if not suppressed."""
+        if not self._suppress_state_changes:
+            self.state_changed.emit()
 
     def clear_extent(self):
         """Clear the displayed extent."""
@@ -805,3 +823,127 @@ class SettingsPanel(QWidget):
             )
             for widget in reversed(self.layer_widgets)
         ]
+
+    def get_state_dict(self):
+        """
+        Get complete UI state as dictionary (for YAML serialization).
+
+        Returns:
+            Dictionary with extent, zoom, output, and layers keys
+
+        Raises:
+            ValueError: If extent is not set
+        """
+        if self.current_extent is None:
+            raise ValueError("Cannot save: No extent selected")
+
+        # Get layers in compositing order (same as used for rendering)
+        # This is bottom-to-top, which is what the CLI expects
+        layer_compositions = self.get_layer_compositions()
+
+        return {
+            'extent': self.current_extent.to_dict(),
+            'zoom': self.zoom_spinner.value(),
+            'output': self.output_path_edit.text(),
+            'layers': [comp.to_dict() for comp in layer_compositions]
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        """
+        Load complete UI state from dictionary (loaded from YAML).
+
+        Args:
+            state: Dictionary with extent, zoom, output, and layers keys
+
+        Raises:
+            ValueError: If state is invalid
+        """
+        from src.cli import validate_config
+        validate_config(state)
+
+        # Suppress state changes during load
+        self._suppress_state_changes = True
+
+        try:
+            # 1. Clear existing layers
+            self._clear_all_layers()
+
+            # 2. Load layers (YAML has compositing order, reverse for UI display)
+            for layer_spec in reversed(state['layers']):
+                comp = LayerComposition.from_dict(layer_spec)
+                self._add_layer_with_settings(
+                    comp.layer_config,
+                    comp.opacity,
+                    comp.blend_mode
+                )
+
+            # 3. Set zoom
+            self.zoom_spinner.setValue(state['zoom'])
+
+            # 4. Set output path
+            self.output_path_edit.setText(state['output'])
+
+            # 5. Set extent
+            extent = Extent.from_dict(state['extent'])
+            self.current_extent = extent
+            self.north_edit.setText(f"{extent.max_lat:.6f}")
+            self.south_edit.setText(f"{extent.min_lat:.6f}")
+            self.east_edit.setText(f"{extent.max_lon:.6f}")
+            self.west_edit.setText(f"{extent.min_lon:.6f}")
+
+        finally:
+            self._suppress_state_changes = False
+
+            # Trigger updates
+            self._update_zoom_range()
+            self._update_estimates()
+            self._update_generate_button()
+            self.changed.emit()  # Update map preview
+
+            # Emit signal to set extent on map
+            self.extent_loaded.emit(extent)
+
+    def _clear_all_layers(self) -> None:
+        """Clear all layers from the composition."""
+        for widget in list(self.layer_widgets):
+            self.layers_container_layout.removeWidget(widget)
+            widget.deleteLater()
+        self.layer_widgets.clear()
+
+    def _add_layer_with_settings(
+        self,
+        layer_config: LayerConfig,
+        opacity: int,
+        blend_mode: str
+    ) -> None:
+        """
+        Add a layer with specific settings (for loading saved state).
+
+        Args:
+            layer_config: Layer configuration
+            opacity: Opacity value (0-100)
+            blend_mode: Blend mode ('normal', 'multiply', 'screen', 'overlay')
+        """
+        layer_widget = LayerItemWidget(layer_config)
+
+        # Set opacity
+        layer_widget.opacity_slider.setValue(opacity)
+        layer_widget.opacity_spinbox.setValue(opacity)
+
+        # Set blend mode
+        for i in range(layer_widget.blend_combo.count()):
+            if layer_widget.blend_combo.itemData(i) == blend_mode:
+                layer_widget.blend_combo.setCurrentIndex(i)
+                break
+
+        # Connect signals
+        layer_widget.moved_up.connect(lambda w=layer_widget: self._move_layer_up(w))
+        layer_widget.moved_down.connect(lambda w=layer_widget: self._move_layer_down(w))
+        layer_widget.changed.connect(self._on_layer_settings_changed)
+        layer_widget.changed.connect(self._emit_state_changed)
+        layer_widget.remove_requested.connect(lambda w=layer_widget: self.remove_layer(w))
+
+        self.layer_widgets.append(layer_widget)
+        self.layers_container_layout.insertWidget(len(self.layer_widgets) - 1, layer_widget)
+
+        self._update_move_buttons()

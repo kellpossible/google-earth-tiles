@@ -233,6 +233,20 @@ class MapWidget(QWidget):
         """
         self.web_view.page().runJavaScript(f"if (typeof setPreviewZoom === 'function') {{ setPreviewZoom({zoom}); }}")
 
+    def set_extent(self, extent: Extent):
+        """
+        Set the extent on the map (draw rectangle and center map).
+
+        Args:
+            extent: Extent to display
+        """
+        js_code = f"""
+        if (typeof setExtent === 'function') {{
+            setExtent({extent.min_lat}, {extent.max_lat}, {extent.min_lon}, {extent.max_lon});
+        }}
+        """
+        self.web_view.page().runJavaScript(js_code)
+
     def get_selected_extent(self) -> Optional[Extent]:
         """
         Get the currently selected extent.

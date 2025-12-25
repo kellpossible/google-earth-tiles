@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Dict, List
 
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QStatusBar,
@@ -21,6 +23,7 @@ from src.core.config import LayerConfig
 from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import TileCalculator
 from src.core.wmts_client import WMTSClient
+from src.gui.file_operations import FileOperations
 from src.gui.map_widget import MapWidget
 from src.gui.settings_panel import SettingsPanel
 from src.models.extent import Extent
@@ -151,6 +154,12 @@ class MainWindow(QMainWindow):
         self.download_worker = None
         self.pending_kmz_data = None
 
+        # File operations handler
+        self.file_ops = FileOperations(self)
+
+        # Track recent file menu actions for dynamic updates
+        self.recent_file_actions = []
+
         # Debounce timer for map updates (prevents rapid refreshes during slider drag)
         self.map_update_timer = QTimer()
         self.map_update_timer.setSingleShot(True)
@@ -162,7 +171,11 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         """Initialize the UI."""
-        self.setWindowTitle("Google Earth Tile Generator")
+        # Create menu bar FIRST
+        self._create_menu_bar()
+
+        # Set initial window title
+        self.setWindowTitle(self.file_ops.get_display_title())
         self.setGeometry(100, 100, 1200, 800)
 
         # Central widget
@@ -200,11 +213,15 @@ class MainWindow(QMainWindow):
         self.map_widget.preview_zoom_changed.connect(self.settings_panel.update_preview_zoom)
         self.settings_panel.generate_requested.connect(self.on_generate_clicked)
         self.settings_panel.sync_preview_zoom_requested.connect(self.map_widget.set_preview_zoom)
+        self.settings_panel.extent_loaded.connect(self.map_widget.set_extent)
 
         # Connect layer composition changes to map preview
         # (Individual layer widget signals are connected when layers are added)
         self.settings_panel.changed.connect(self._update_map_preview)
         self.settings_panel.settings_changed_no_zoom.connect(self._update_map_preview_no_zoom)
+
+        # Connect state change tracking
+        self.settings_panel.state_changed.connect(self._on_state_changed)
 
         # Trigger initial map update with default layer
         self._update_map_preview()
@@ -422,3 +439,172 @@ class MainWindow(QMainWindow):
         self.settings_panel.generate_button.setEnabled(True)
         self.status_bar.showMessage("Download failed")
         self.pending_kmz_data = None
+
+    def _create_menu_bar(self):
+        """Create the menu bar with File menu."""
+        menubar = self.menuBar()
+        self.file_menu = menubar.addMenu("&File")
+
+        # Open
+        open_action = QAction("&Open...", self)
+        open_action.setShortcut(QKeySequence.StandardKey.Open)
+        open_action.setStatusTip("Open configuration file")
+        open_action.triggered.connect(self._on_open)
+        self.file_menu.addAction(open_action)
+
+        # Mark where recent files section starts
+        self.recent_files_start_separator = self.file_menu.addSeparator()
+
+        # Recent files will be inserted here dynamically
+        # (between start and end separators)
+
+        # Mark where recent files section ends (before Save)
+        self.recent_files_end_separator = self.file_menu.addSeparator()
+
+        # Save
+        save_action = QAction("&Save", self)
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.setStatusTip("Save configuration")
+        save_action.triggered.connect(self._on_save)
+        self.file_menu.addAction(save_action)
+
+        # Save As
+        save_as_action = QAction("Save &As...", self)
+        save_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        save_as_action.setStatusTip("Save configuration as new file")
+        save_as_action.triggered.connect(self._on_save_as)
+        self.file_menu.addAction(save_as_action)
+
+        self.file_menu.addSeparator()
+
+        # Quit
+        quit_action = QAction("&Quit", self)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        quit_action.setStatusTip("Quit application")
+        quit_action.triggered.connect(self.close)
+        self.file_menu.addAction(quit_action)
+
+        # Initial population of recent files
+        self._update_recent_files_menu()
+
+    def _on_open(self):
+        """Handle File > Open action."""
+        if self.file_ops.open(self.settings_panel.load_state_dict, self.settings_panel.get_state_dict):
+            self._update_window_title()
+            self._update_recent_files_menu()
+
+    def _on_save(self):
+        """Handle File > Save action."""
+        if self.file_ops.save(self.settings_panel.get_state_dict):
+            self._update_window_title()
+            self._update_recent_files_menu()
+
+    def _on_save_as(self):
+        """Handle File > Save As action."""
+        if self.file_ops.save_as(self.settings_panel.get_state_dict):
+            self._update_window_title()
+            self._update_recent_files_menu()
+
+    def _update_window_title(self):
+        """Update window title based on file state."""
+        self.setWindowTitle(self.file_ops.get_display_title())
+
+    def _on_state_changed(self):
+        """Handle any state change in settings panel."""
+        self.file_ops.mark_dirty()
+        self._update_window_title()
+
+    def _update_recent_files_menu(self):
+        """Update the Recent Files section in the File menu."""
+        # Remove all existing recent file actions
+        for action in self.recent_file_actions:
+            self.file_menu.removeAction(action)
+        self.recent_file_actions.clear()
+
+        recent_files = self.file_ops.get_recent_files()
+
+        if not recent_files:
+            # Show "No Recent Files" disabled action
+            no_recent = QAction("No Recent Files", self)
+            no_recent.setEnabled(False)
+            self.file_menu.insertAction(self.recent_files_end_separator, no_recent)
+            self.recent_file_actions.append(no_recent)
+        else:
+            # Add first 5 files directly to menu
+            for i, file_path_str in enumerate(recent_files[:5]):
+                file_path = Path(file_path_str)
+
+                action = QAction(f"&{i+1} {file_path.name}", self)
+                action.setStatusTip(str(file_path))
+                action.setData(file_path_str)
+                action.triggered.connect(
+                    lambda checked, path=file_path_str: self._open_recent_file(path)
+                )
+                self.file_menu.insertAction(self.recent_files_end_separator, action)
+                self.recent_file_actions.append(action)
+
+            # If more than 5 files, create "More" submenu
+            if len(recent_files) > 5:
+                more_menu = QMenu("&More", self)
+
+                for i, file_path_str in enumerate(recent_files[5:], start=5):
+                    file_path = Path(file_path_str)
+
+                    # Use numbered shortcuts (6-9, then 0)
+                    if i < 9:
+                        action = QAction(f"&{i+1} {file_path.name}", self)
+                    else:
+                        action = QAction(f"&0 {file_path.name}", self)
+
+                    action.setStatusTip(str(file_path))
+                    action.setData(file_path_str)
+                    action.triggered.connect(
+                        lambda checked, path=file_path_str: self._open_recent_file(path)
+                    )
+                    more_menu.addAction(action)
+
+                # Insert More submenu
+                more_action = self.file_menu.insertMenu(self.recent_files_end_separator, more_menu)
+                self.recent_file_actions.append(more_action)
+
+            # Add separator before Clear
+            sep = self.file_menu.insertSeparator(self.recent_files_end_separator)
+            self.recent_file_actions.append(sep)
+
+            # Add Clear Recent Files
+            clear_action = QAction("Clear Recent Files", self)
+            clear_action.triggered.connect(self._clear_recent_files)
+            self.file_menu.insertAction(self.recent_files_end_separator, clear_action)
+            self.recent_file_actions.append(clear_action)
+
+    def _open_recent_file(self, file_path_str: str):
+        """
+        Open a file from recent files list.
+
+        Args:
+            file_path_str: String path to recent file
+        """
+        if self.file_ops.open_recent(
+            Path(file_path_str),
+            self.settings_panel.load_state_dict,
+            self.settings_panel.get_state_dict
+        ):
+            self._update_window_title()
+            self._update_recent_files_menu()
+
+    def _clear_recent_files(self):
+        """Clear the recent files list."""
+        self.file_ops.clear_recent_files()
+        self._update_recent_files_menu()
+
+    def closeEvent(self, event):
+        """
+        Handle window close event.
+
+        Args:
+            event: Close event
+        """
+        if self.file_ops.prompt_save_before_close(self.settings_panel.get_state_dict):
+            event.accept()
+        else:
+            event.ignore()

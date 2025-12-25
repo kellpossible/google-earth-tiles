@@ -1,0 +1,14 @@
+extent:
+  min_lon: 142.858
+  min_lat: 43.669
+  max_lon: 142.862
+  max_lat: 43.671
+
+zoom: 14
+
+output: output/test-tiles.kmz
+
+layers:
+  - name: std
+    opacity: 100
+    blend_mode: normal

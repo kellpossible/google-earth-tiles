@@ -115,6 +115,48 @@
             map.setZoom(zoom);
         }
 
+        // Function to set extent programmatically (called from Python when loading file)
+        function setExtent(south, north, west, east) {
+            console.log('Setting extent:', south, north, west, east);
+
+            // Clear existing extent
+            drawnItems.clearLayers();
+
+            // Create rectangle with the bounds
+            var bounds = L.latLngBounds(
+                L.latLng(south, west),  // southwest
+                L.latLng(north, east)   // northeast
+            );
+
+            var rectangle = L.rectangle(bounds, {
+                color: '#3388ff',
+                fillColor: '#3388ff',
+                fillOpacity: 0.2,
+                weight: 3
+            });
+
+            // Add to drawn items
+            drawnItems.addLayer(rectangle);
+            currentExtentLayer = rectangle;
+
+            // Hide instructions
+            var instructions = document.getElementById('instructions');
+            if (instructions) {
+                instructions.style.display = 'none';
+            }
+
+            // Enable editing
+            rectangle.editing.enable();
+
+            // Listen to edit events
+            rectangle.on('edit', function() {
+                sendExtentToQt(rectangle);
+            });
+
+            // Fit map to show the extent with some padding
+            map.fitBounds(bounds, {padding: [50, 50]});
+        }
+
         // Add drawing controls
         var drawnItems = new L.FeatureGroup();
         map.addLayer(drawnItems);
