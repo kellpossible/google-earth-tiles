@@ -39,8 +39,15 @@ class KMZGenerator:
         """
         Calculate LOD pixel thresholds for a zoom level.
 
-        LOD (Level of Detail) pixel thresholds control when tiles appear/disappear
-        in Google Earth based on how many screen pixels they occupy.
+        Creates overlapping LOD ranges with low thresholds so higher detail
+        tiles appear early. Lower zoom tiles hide as you zoom in, while higher
+        zoom tiles stay visible.
+
+        Reference: 
+            https://developers.google.com/kml/documentation/regions
+            https://www.google.com/earth/outreach/learn/avoiding-overload-with-regions/
+            https://developers.google.com/kml/documentation/kmlreference#minlodpixels
+            https://developers.google.com/kml/documentation/kmlreference#maxlodpixels
 
         Args:
             zoom: Current zoom level
@@ -50,19 +57,21 @@ class KMZGenerator:
         Returns:
             Tuple of (minLodPixels, maxLodPixels) where -1 means infinite
         """
+        if min_zoom == max_zoom:
+            # Single zoom level - always visible
+            return (-1, -1)
+        
         if zoom == max_zoom:
-            # Highest detail - visible from 256px upward, stays visible when zoomed in
-            return (256, -1)
-        elif zoom == min_zoom:
-            # Lowest detail - always visible when zoomed out, hides when zoomed in past 512px
-            return (-1, 512)
-        else:
-            # Middle levels - visible in 256-512px range for smooth transitions
-            return (256, 512)
+            return (80, -1)
+        
+        if zoom == min_zoom:
+            return (-1, 256)
+        
+        return (80, 256)
 
     async def create_kmz_async(
         self,
-        layer_tiles_dict: Dict[LayerConfig, List[Tuple[Path, int, int, int]]],
+        extent: 'Extent',
         min_zoom: int,
         max_zoom: int,
         layer_compositions: List[LayerComposition]
@@ -71,7 +80,7 @@ class KMZGenerator:
         Create KMZ file with composited tiles and optional LOD pyramid.
 
         Args:
-            layer_tiles_dict: Dictionary mapping LayerConfig to list of (tile_path, x, y, z) tuples
+            extent: Geographic extent (Extent object)
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of LayerComposition objects
@@ -79,8 +88,8 @@ class KMZGenerator:
         Returns:
             Path to created KMZ file
         """
-        if not layer_tiles_dict:
-            raise ValueError("No tiles provided for KMZ generation")
+        if not layer_compositions:
+            raise ValueError("No layer compositions provided for KMZ generation")
 
         if min_zoom > max_zoom:
             raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
@@ -96,56 +105,68 @@ class KMZGenerator:
         temp_dir = Path(tempfile.mkdtemp())
 
         try:
-            # Get all unique tile coordinates
-            tile_coords = set()
-            for tiles in layer_tiles_dict.values():
-                for _, x, y, z in tiles:
-                    tile_coords.add((x, y, z))
+            # Use provided extent
+            min_lon = extent.min_lon
+            min_lat = extent.min_lat
+            max_lon = extent.max_lon
+            max_lat = extent.max_lat
 
-            logger.info(f"Compositing {len(tile_coords)} tiles...")
+            logger.info(f"Using extent: {min_lon:.6f}, {min_lat:.6f} to {max_lon:.6f}, {max_lat:.6f}")
 
-            # Composite each tile
-            composited_tiles = []
-            total_tiles = len(tile_coords)
-            for i, (x, y, z) in enumerate(tile_coords):
-                # Report progress
-                if self.progress_callback:
-                    self.progress_callback(i, total_tiles, f"Compositing tile {i+1}/{total_tiles}...")
+            # Composite tiles at each zoom level separately
+            # This allows using native source tiles at each zoom instead of downsampling
+            all_tiles_by_zoom = {}
 
-                # Composite tile using the same logic as preview (with per-layer LOD support)
-                tile_data = await self.compositor.composite_tile(
-                    x, y, z, layer_compositions,
-                    output_min_zoom=min_zoom,
-                    output_max_zoom=max_zoom
+            # Calculate total tiles across all zoom levels for progress tracking
+            total_tiles = 0
+            for zoom_level in range(min_zoom, max_zoom + 1):
+                tiles_at_zoom = TileCalculator.get_tiles_in_extent(
+                    min_lon, min_lat, max_lon, max_lat, zoom_level
+                )
+                total_tiles += len(tiles_at_zoom)
+
+            # Composite at each zoom level
+            composited_count = 0
+            for zoom_level in range(min_zoom, max_zoom + 1):
+                logger.info(f"Compositing tiles at zoom {zoom_level}...")
+
+                # Calculate tile coordinates for this zoom level
+                tiles_at_zoom = TileCalculator.get_tiles_in_extent(
+                    min_lon, min_lat, max_lon, max_lat, zoom_level
                 )
 
-                if tile_data:
-                    # Save to temp file
-                    tile_path = temp_dir / f"{z}_{x}_{y}.png"
-                    with open(tile_path, 'wb') as f:
-                        f.write(tile_data)
-                    composited_tiles.append((tile_path, x, y, z))
+                composited_tiles = []
+                for x, y in tiles_at_zoom:
+                    composited_count += 1
+
+                    # Report progress
+                    if self.progress_callback:
+                        self.progress_callback(
+                            composited_count,
+                            total_tiles,
+                            f"Compositing tile {composited_count}/{total_tiles}..."
+                        )
+
+                    # Composite this tile using native source tiles from layer_tiles_dict
+                    tile_data = await self.compositor.composite_tile(
+                        x, y, zoom_level, layer_compositions,
+                        output_min_zoom=min_zoom,
+                        output_max_zoom=max_zoom
+                    )
+
+                    if tile_data:
+                        # Save to temp file
+                        tile_path = temp_dir / f"{zoom_level}_{x}_{y}.png"
+                        with open(tile_path, 'wb') as f:
+                            f.write(tile_data)
+                        composited_tiles.append((tile_path, x, y, zoom_level))
+
+                all_tiles_by_zoom[zoom_level] = composited_tiles
+                logger.info(f"Composited {len(composited_tiles)} tiles at zoom {zoom_level}")
 
             # Report compositing completion
             if self.progress_callback:
                 self.progress_callback(total_tiles, total_tiles, "Compositing complete")
-
-            # Phase 2: Generate LOD pyramid if multi-zoom
-            all_tiles_by_zoom = {max_zoom: composited_tiles}
-
-            if min_zoom < max_zoom:
-                from src.core.tile_downsampler import TileDownsampler
-
-                logger.info(f"Generating LOD pyramid from zoom {max_zoom} to {min_zoom}...")
-
-                pyramid = TileDownsampler.generate_lod_pyramid(
-                    composited_tiles,
-                    max_zoom,
-                    min_zoom,
-                    temp_dir,
-                    self.progress_callback
-                )
-                all_tiles_by_zoom.update(pyramid)
 
             # Phase 3: Create KML with all zoom levels
             if self.progress_callback:
@@ -155,7 +176,7 @@ class KMZGenerator:
             with tempfile.NamedTemporaryFile(mode='w', suffix='.kml', delete=False) as kml_file:
                 kml_temp_path = Path(kml_file.name)
 
-            # Add tiles for each zoom level
+            # Add tiles for each zoom level with LOD
             lod_kml_config = None
             if min_zoom < max_zoom:
                 lod_kml_config = {'min_zoom': min_zoom, 'max_zoom': max_zoom}
@@ -192,7 +213,7 @@ class KMZGenerator:
 
     def create_kmz(
         self,
-        layer_tiles_dict: Dict[LayerConfig, List[Tuple[Path, int, int, int]]],
+        extent: 'Extent',
         min_zoom: int,
         max_zoom: int,
         layer_compositions: List[LayerComposition]
@@ -201,7 +222,7 @@ class KMZGenerator:
         Create KMZ file with composited tiles and optional LOD (synchronous wrapper).
 
         Args:
-            layer_tiles_dict: Dictionary mapping LayerConfig to list of (tile_path, x, y, z) tuples
+            extent: Geographic extent (Extent object)
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of LayerComposition objects
@@ -217,7 +238,7 @@ class KMZGenerator:
             asyncio.set_event_loop(loop)
 
         return loop.run_until_complete(
-            self.create_kmz_async(layer_tiles_dict, min_zoom, max_zoom, layer_compositions)
+            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions)
         )
 
     def _add_composited_tiles(

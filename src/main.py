@@ -46,6 +46,20 @@ def cmd_list_layers(args):
     return 0
 
 
+def _set_app_metadata(app):
+    """
+    Set organization and application metadata.
+
+    This is used by QStandardPaths and QSettings to determine
+    cache and configuration file locations.
+
+    Args:
+        app: QApplication or QCoreApplication instance
+    """
+    app.setOrganizationName("lukefrisken.com")
+    app.setApplicationName("google-earth-tile-generator")
+
+
 def main():
     """Main application entry point."""
     parser = argparse.ArgumentParser(
@@ -96,8 +110,9 @@ def main():
         )
         QWebEngineUrlScheme.registerScheme(scheme)
 
+        # Create QApplication for GUI
         app = QApplication(sys.argv)
-        app.setApplicationName("Google Earth Tile Generator")
+        _set_app_metadata(app)
 
         # Set up Ctrl+C handling
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -113,6 +128,12 @@ def main():
 
         sys.exit(app.exec())
     else:
+        # Create QCoreApplication for CLI commands to ensure proper cache/settings paths
+        from PyQt6.QtCore import QCoreApplication
+
+        app = QCoreApplication(sys.argv)
+        _set_app_metadata(app)
+
         # Run the subcommand
         return args.func(args)
 

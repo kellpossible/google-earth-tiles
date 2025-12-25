@@ -873,9 +873,11 @@ class SettingsPanel(QWidget):
             self.zoom_range_label.setText("-")
             return
 
-        # Find intersection of zoom ranges
-        layer_min_zoom = max(layer.min_zoom for layer in enabled_layers)
-        layer_max_zoom = min(layer.max_zoom for layer in enabled_layers)
+        # Find union of zoom ranges (allow resampling to any zoom level)
+        # Minimum: Always 2 (absolute minimum, allows maximum downsampling)
+        # Maximum: The highest max_zoom from any enabled layer
+        layer_min_zoom = 2
+        layer_max_zoom = max(layer.max_zoom for layer in enabled_layers)
 
         if layer_min_zoom > layer_max_zoom:
             self.zoom_range_label.setText(f"<font color='red'>No compatible zoom range!</font>")

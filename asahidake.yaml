@@ -1,34 +1,22 @@
-# Geographic extent (bounding box)
-# All coordinates in WGS84 (latitude/longitude)
-# This example covers an area in Hokkaido, Japan
-# Center: 43.6693912, 142.858222
 extent:
-  min_lon: 142.808222  # West
-  min_lat: 43.6193912   # South
-  max_lon: 142.908222  # East
-  max_lat: 43.7193912   # North
-
-# Zoom level (tile resolution)
-# Higher zoom = more detail but more tiles
-# Valid range depends on selected layers:
-#   - std, pale, ort: 2-18
-#   - blank: 5-14
-#   - english: 5-8
-zoom: 17
-
-# Output KMZ file path
-output: output/hokkaido-tiles.kmz
-
-# Layers to include (can specify multiple)
-# Available layers:
-#   - std: Standard Map (roads, labels, features)
-#   - pale: Pale Map (light colored base map)
-#   - blank: Blank Map (minimal details)
-#   - english: English Map (English labels)
-#   - ort: Aerial Photos (satellite imagery)
+  min_lon: 142.78347015380862
+  min_lat: 43.620667696758616
+  max_lon: 142.97092437744143
+  max_lat: 43.73315055548809
+min_zoom: 12
+max_zoom: 16
+output: /Users/luke/programming/google-earth-tile-generator/asahidake.kmz
 layers:
-  - std
-  - ort
-
-# Optional: Add description or metadata (not used by program, just for documentation)
-description: "Hokkaido area tiles with standard map and aerial imagery"
+- name: std
+  opacity: 100
+  blend_mode: normal
+- name: hillshademap
+  opacity: 26
+  blend_mode: multiply
+  lod_mode: select_zooms
+  selected_zooms:
+  - 15
+  - 16
+- name: slopezone1map
+  opacity: 52
+  blend_mode: multiply

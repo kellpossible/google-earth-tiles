@@ -1,10 +1,7 @@
 """Main application window."""
 
-import asyncio
 import logging
-import tempfile
 from pathlib import Path
-from typing import Dict, List
 
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
@@ -19,10 +16,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core.config import LayerConfig
 from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import TileCalculator
-from src.core.wmts_client import WMTSClient
 from src.gui.file_operations import FileOperations
 from src.gui.map_widget import MapWidget
 from src.gui.settings_panel import SettingsPanel
@@ -49,138 +44,53 @@ class ExportWorker(QThread):
         """
         super().__init__()
         self.request = request.copy()  # Defensive copy
-        self.layers = [comp.layer_config for comp in request.layer_compositions]
-        self.layer_tiles_dict = {}
 
     def run(self):
         """Run the complete export process."""
         try:
-            # Phase 1: Download tiles
-            temp_dir = Path(tempfile.mkdtemp())
-
-            # Calculate total work units across all phases
             min_zoom = self.request.min_zoom
             max_zoom = self.request.max_zoom
 
-            # Phase 1: Download tiles at max zoom only
-            tiles_per_layer = TileCalculator.get_tiles_in_extent(
-                self.request.extent.min_lon,
-                self.request.extent.min_lat,
-                self.request.extent.max_lon,
-                self.request.extent.max_lat,
-                max_zoom
-            )
-
-            num_max_tiles = len(tiles_per_layer)
-            download_units = num_max_tiles * len(self.layers)
-
-            # Phase 2: Composite at max zoom
-            composite_units = num_max_tiles
-
-            # Phase 3: LOD downsampling (if multi-zoom)
-            lod_units = 0
-            if min_zoom < max_zoom:
-                for zoom in range(max_zoom - 1, min_zoom - 1, -1):
-                    tiles_at_zoom = TileCalculator.get_tiles_in_extent(
-                        self.request.extent.min_lon,
-                        self.request.extent.min_lat,
-                        self.request.extent.max_lon,
-                        self.request.extent.max_lat,
-                        zoom
-                    )
-                    lod_units += len(tiles_at_zoom)
-
-            total_units = download_units + composite_units + lod_units + 1
-            completed_units = 0
-
-            # Download tiles for each layer
-            for layer in self.layers:
-                self.progress.emit(
-                    completed_units,
-                    total_units,
-                    f"Downloading {layer.display_name}..."
+            # Calculate total work units for progress tracking
+            # Estimate based on total tiles across all zoom levels
+            total_tiles = 0
+            for zoom_level in range(min_zoom, max_zoom + 1):
+                tiles_at_zoom = TileCalculator.get_tiles_in_extent(
+                    self.request.extent.min_lon,
+                    self.request.extent.min_lat,
+                    self.request.extent.max_lon,
+                    self.request.extent.max_lat,
+                    zoom_level
                 )
+                total_tiles += len(tiles_at_zoom)
 
-                # Create layer directory
-                layer_dir = temp_dir / layer.name
-                layer_dir.mkdir(exist_ok=True)
+            total_units = total_tiles
 
-                # Convert tiles to (x, y, z) format
-                tiles_xyz = [(x, y, max_zoom) for x, y in tiles_per_layer]
-
-                # Download tiles
-                downloaded = asyncio.run(self._download_layer_tiles(
-                    layer,
-                    tiles_xyz,
-                    layer_dir,
-                    completed_units,
-                    total_units
-                ))
-
-                self.layer_tiles_dict[layer] = downloaded
-                completed_units += num_max_tiles
-
-            # Phase 2 & 3: Generate KMZ with compositing and LOD
+            # Generate KMZ (tiles will be fetched on-demand with caching)
             is_multi_zoom = min_zoom < max_zoom
             self.progress.emit(
-                completed_units,
+                0,
                 total_units,
                 "Generating KMZ with LOD pyramid..." if is_multi_zoom else "Generating KMZ..."
             )
 
             def kmz_progress(current: int, total: int, message: str):
-                """Translate KMZ progress to overall progress."""
-                self.progress.emit(
-                    download_units + current,
-                    total_units,
-                    message
-                )
+                """Forward KMZ progress to UI."""
+                self.progress.emit(current, total, message)
 
             generator = KMZGenerator(self.request.output_path, kmz_progress)
             result_path = generator.create_kmz(
-                self.layer_tiles_dict,
+                self.request.extent,
                 min_zoom,
                 max_zoom,
                 self.request.layer_compositions
             )
-
-            # Cleanup temp files
-            for layer, tiles in self.layer_tiles_dict.items():
-                for tile_path, x, y, z in tiles:
-                    if tile_path.exists():
-                        tile_path.unlink()
 
             self.finished.emit(result_path)
 
         except Exception as e:
             logger.exception("Error during export")
             self.error.emit(str(e))
-
-    async def _download_layer_tiles(
-        self,
-        layer: LayerConfig,
-        tiles: List[tuple],
-        output_dir: Path,
-        base_progress: int,
-        total_progress: int
-    ):
-        """Download tiles for a single layer with progress reporting."""
-        def progress_callback(current: int, total: int):
-            """Progress callback for download."""
-            self.progress.emit(
-                base_progress + current,
-                total_progress,
-                f"Downloading {layer.display_name}... ({current}/{total})"
-            )
-
-        async with WMTSClient(layer) as client:
-            downloaded = await client.download_tiles_batch(
-                tiles,
-                output_dir,
-                progress_callback
-            )
-
-        return downloaded
 
 
 class MainWindow(QMainWindow):

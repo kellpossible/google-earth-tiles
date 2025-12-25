@@ -1,19 +1,14 @@
 """CLI mode for batch processing with YAML config."""
 
-import asyncio
 import logging
-import sys
-import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 import yaml
-from tqdm import tqdm
 
-from src.core.config import LAYERS, LayerConfig
+from src.core.config import LAYERS
 from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import TileCalculator
-from src.core.wmts_client import WMTSClient
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
 
@@ -134,77 +129,13 @@ def validate_config(config: Dict) -> None:
     if not isinstance(max_zoom, int):
         raise ValueError("max_zoom must be an integer")
 
-    if min_zoom < 0 or min_zoom > 18:
-        raise ValueError(f"min_zoom must be between 0 and 18, got {min_zoom}")
-    if max_zoom < 0 or max_zoom > 18:
-        raise ValueError(f"max_zoom must be between 0 and 18, got {max_zoom}")
+    if min_zoom < 2 or min_zoom > 18:
+        raise ValueError(f"min_zoom must be between 2 and 18, got {min_zoom}")
+    if max_zoom < 2 or max_zoom > 18:
+        raise ValueError(f"max_zoom must be between 2 and 18, got {max_zoom}")
 
     if min_zoom > max_zoom:
         raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
-
-
-async def download_tiles(
-    layers: List[LayerConfig],
-    extent: Extent,
-    zoom: int
-) -> Dict[LayerConfig, List]:
-    """
-    Download tiles for all layers.
-
-    Args:
-        layers: List of layer configurations
-        extent: Geographic extent
-        zoom: Zoom level
-
-    Returns:
-        Dictionary mapping layer configs to downloaded tiles
-    """
-    # Calculate tiles
-    tiles_per_layer = TileCalculator.get_tiles_in_extent(
-        extent.min_lon,
-        extent.min_lat,
-        extent.max_lon,
-        extent.max_lat,
-        zoom
-    )
-
-    total_tiles = len(tiles_per_layer) * len(layers)
-    logger.info(f"Total tiles to download: {total_tiles:,}")
-
-    # Create temp directory
-    temp_dir = Path(tempfile.mkdtemp())
-    layer_tiles_dict = {}
-
-    # Create progress bar
-    pbar = tqdm(total=total_tiles, desc="Downloading tiles", unit="tile")
-
-    # Download tiles for each layer
-    for layer in layers:
-        logger.info(f"Downloading layer: {layer.display_name}")
-
-        # Create layer directory
-        layer_dir = temp_dir / layer.name
-        layer_dir.mkdir(exist_ok=True)
-
-        # Convert tiles to (x, y, z) format
-        tiles_xyz = [(x, y, zoom) for x, y in tiles_per_layer]
-
-        # Progress callback
-        def progress_callback(current, total):
-            pbar.update(1)
-
-        # Download tiles
-        async with WMTSClient(layer) as client:
-            downloaded = await client.download_tiles_batch(
-                tiles_xyz,
-                layer_dir,
-                progress_callback
-            )
-
-        layer_tiles_dict[layer] = downloaded
-
-    pbar.close()
-    return layer_tiles_dict
 
 
 def run_cli(config_path: str) -> int:
@@ -266,49 +197,14 @@ def run_cli(config_path: str) -> int:
         layers = []
 
         for spec in layer_specs:
-            if isinstance(spec, str):
-                # Simple format: just layer name
-                layer_config = LAYERS[spec]
-                composition = LayerComposition(
-                    layer_config=layer_config,
-                    opacity=100,  # Default
-                    blend_mode='normal'  # Default
-                )
-            else:
-                # Extended format: dict with name, optional opacity and blend_mode
-                layer_config = LAYERS[spec['name']]
-                composition = LayerComposition(
-                    layer_config=layer_config,
-                    opacity=spec.get('opacity', 100),  # Default to 100
-                    blend_mode=spec.get('blend_mode', 'normal')  # Default to 'normal'
-                )
-
+            # Use LayerComposition.from_dict() to properly parse all fields
+            # including lod_mode, selected_zooms, opacity, blend_mode, etc.
+            composition = LayerComposition.from_dict(spec)
             layer_compositions.append(composition)
-            layers.append(layer_config)
+            layers.append(composition.layer_config)
 
-        # Validate zoom range for selected layers
-        layer_min_zoom = max(layer.min_zoom for layer in layers)
-        layer_max_zoom = min(layer.max_zoom for layer in layers)
-
-        # Clamp zoom range to valid layer range
-        original_min = min_zoom
-        original_max = max_zoom
-
-        min_zoom = max(min_zoom, layer_min_zoom)
-        max_zoom = min(max_zoom, layer_max_zoom)
-
-        if min_zoom != original_min or max_zoom != original_max:
-            logger.warning(
-                f"Zoom range {original_min}-{original_max} adjusted to {min_zoom}-{max_zoom} "
-                f"to match layer capabilities"
-            )
-
-        if min_zoom > max_zoom:
-            logger.error(
-                f"No valid zoom range for selected layers. "
-                f"Layer range: {layer_min_zoom}-{layer_max_zoom}"
-            )
-            return 1
+        # No zoom range clamping needed - resampling is supported
+        # Users can specify any zoom range from 2-18, regardless of layer native zoom ranges
 
         # Calculate estimates across all zoom levels
         total_tiles = 0
@@ -331,29 +227,18 @@ def run_cli(config_path: str) -> int:
             logger.info(f"  Zoom range: {min_zoom}-{max_zoom} ({max_zoom - min_zoom + 1} levels)")
         logger.info(f"  Extent: {extent.min_lon:.4f}, {extent.min_lat:.4f} to "
                    f"{extent.max_lon:.4f}, {extent.max_lat:.4f}")
-        logger.info(f"  Total tiles: {total_tiles:,}")
+        logger.info(f"  Total tiles to composite: {total_tiles:,}")
         logger.info(f"  Output: {output_path}")
 
-        # Download tiles at max zoom level only
-        logger.info(f"Downloading tiles at zoom {max_zoom}...")
-        layer_tiles_dict = asyncio.run(download_tiles(layers, extent, max_zoom))
-
-        # Generate KMZ
+        # Generate KMZ (tiles will be fetched on-demand with caching)
         logger.info("Generating KMZ file...")
         generator = KMZGenerator(output_path)
         result_path = generator.create_kmz(
-            layer_tiles_dict,
+            extent,
             min_zoom,
             max_zoom,
             layer_compositions
         )
-
-        # Cleanup temp files
-        logger.info("Cleaning up temporary files...")
-        for layer, tiles in layer_tiles_dict.items():
-            for tile_path, x, y, z in tiles:
-                if tile_path.exists():
-                    tile_path.unlink()
 
         logger.info(f"✓ KMZ file created successfully: {result_path}")
         return 0

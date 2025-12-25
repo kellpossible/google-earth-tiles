@@ -1,16 +1,18 @@
 """Tile compositor for preview rendering."""
 
 import asyncio
+import hashlib
 import io
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import List, Optional
 
 import aiohttp
 import numpy as np
 import requests
 from PIL import Image
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QUrl
+from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QStandardPaths, QUrl
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestJob, QWebEngineUrlSchemeHandler
 
 from src.models.layer_composition import LayerComposition
@@ -25,6 +27,27 @@ class TileCompositor:
     def __init__(self):
         """Initialize compositor."""
         self.session: Optional[aiohttp.ClientSession] = None
+
+        # Initialize cache directory
+        # QStandardPaths.CacheLocation already includes org/app name if set via QCoreApplication
+        cache_base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
+        self.cache_dir = Path(cache_base) / "tiles"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Tile cache directory: {self.cache_dir}")
+
+    def _get_cache_path(self, url: str) -> Path:
+        """
+        Get cache file path for a tile URL.
+
+        Args:
+            url: Tile URL
+
+        Returns:
+            Path to cached tile file
+        """
+        # Hash the URL to create a unique filename
+        url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
+        return self.cache_dir / f"{url_hash}.png"
 
     async def get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -124,10 +147,12 @@ class TileCompositor:
         # Downsample to target size using high-quality Lanczos filter
         return canvas.resize((256, 256), Image.Resampling.LANCZOS)
 
-    async def fetch_tile(self, url: str, needs_upsampling: bool = False,
-                         scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0) -> Optional[Image.Image]:
+    def fetch_tile_sync(self, url: str, needs_upsampling: bool = False,
+                        scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0) -> Optional[Image.Image]:
         """
-        Fetch a tile from URL and optionally upsample it.
+        Fetch a tile synchronously and optionally upsample it.
+
+        Checks cache first, downloads if not cached, and saves to cache.
 
         Args:
             url: Tile URL
@@ -139,12 +164,92 @@ class TileCompositor:
         Returns:
             PIL Image or None if fetch failed
         """
+        cache_path = self._get_cache_path(url)
+
+        # Check cache first
+        if cache_path.exists():
+            try:
+                tile = Image.open(cache_path).convert('RGBA')
+
+                # Upsample if needed using bilinear interpolation
+                if needs_upsampling:
+                    tile = self._upsample_tile(tile, scale_factor, offset_x, offset_y)
+
+                return tile
+            except Exception as e:
+                logger.warning(f"Error reading cached tile {cache_path}: {e}")
+                # Fall through to download
+
+        # Download tile
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                tile = Image.open(io.BytesIO(response.content)).convert('RGBA')
+
+                # Save to cache
+                try:
+                    tile.save(cache_path, format='PNG')
+                except Exception as e:
+                    logger.warning(f"Error saving tile to cache {cache_path}: {e}")
+
+                # Upsample if needed using bilinear interpolation
+                if needs_upsampling:
+                    tile = self._upsample_tile(tile, scale_factor, offset_x, offset_y)
+
+                return tile
+            else:
+                logger.warning(f"Failed to fetch tile {url}: HTTP {response.status_code}")
+                return None
+        except Exception as e:
+            logger.warning(f"Error fetching tile {url}: {e}")
+            return None
+
+    async def fetch_tile(self, url: str, needs_upsampling: bool = False,
+                         scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0) -> Optional[Image.Image]:
+        """
+        Fetch a tile from URL asynchronously and optionally upsample it.
+
+        Checks cache first, downloads if not cached, and saves to cache.
+
+        Args:
+            url: Tile URL
+            needs_upsampling: Whether to upsample the tile
+            scale_factor: Scale factor for upsampling (2^zoom_diff)
+            offset_x: X offset within parent tile (0 to scale_factor-1)
+            offset_y: Y offset within parent tile (0 to scale_factor-1)
+
+        Returns:
+            PIL Image or None if fetch failed
+        """
+        cache_path = self._get_cache_path(url)
+
+        # Check cache first
+        if cache_path.exists():
+            try:
+                tile = Image.open(cache_path).convert('RGBA')
+
+                # Upsample if needed using bilinear interpolation
+                if needs_upsampling:
+                    tile = self._upsample_tile(tile, scale_factor, offset_x, offset_y)
+
+                return tile
+            except Exception as e:
+                logger.warning(f"Error reading cached tile {cache_path}: {e}")
+                # Fall through to download
+
+        # Download tile
         try:
             session = await self.get_session()
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     data = await response.read()
                     tile = Image.open(io.BytesIO(data)).convert('RGBA')
+
+                    # Save to cache
+                    try:
+                        tile.save(cache_path, format='PNG')
+                    except Exception as e:
+                        logger.warning(f"Error saving tile to cache {cache_path}: {e}")
 
                     # Upsample if needed using bilinear interpolation
                     if needs_upsampling:
@@ -358,6 +463,12 @@ class TileCompositor:
                 logger.debug(f"Skipping {composition.layer_config.name} at zoom {z} (no available zooms)")
                 continue
 
+            # For select_zooms mode, only include layer at explicitly selected zoom levels
+            # (no resampling from nearby zooms)
+            if composition.lod_mode == "select_zooms" and z not in available_zooms:
+                logger.debug(f"Skipping {composition.layer_config.name} at zoom {z} (zoom not in selected_zooms)")
+                continue
+
             # Find best source zoom for this layer
             source_zoom = composition.find_best_source_zoom(z, available_zooms)
 
@@ -429,90 +540,6 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
         # Increment version to invalidate pending requests
         self.composition_version += 1
 
-    def _get_effective_tile_coords(self, x: int, y: int, z: int, layer_config: LayerConfig) -> tuple:
-        """
-        Get actual tile coords to fetch, handling zoom clamping and upsampling.
-
-        Args:
-            x, y, z: Requested tile coordinates
-            layer_config: Layer configuration with min/max zoom
-
-        Returns:
-            (fetch_x, fetch_y, fetch_z, needs_upsampling, scale_factor, offset_x, offset_y)
-        """
-        if z < layer_config.min_zoom:
-            # Layer doesn't support this zoom - skip it
-            return (None, None, None, False, 1, 0, 0)
-        elif z > layer_config.max_zoom:
-            # Need to fetch parent tile and upsample
-            effective_z = layer_config.max_zoom
-            zoom_diff = z - effective_z
-            scale_factor = 2 ** zoom_diff
-
-            fetch_x = x >> zoom_diff
-            fetch_y = y >> zoom_diff
-            offset_x = x - (fetch_x << zoom_diff)
-            offset_y = y - (fetch_y << zoom_diff)
-
-            return (fetch_x, fetch_y, effective_z, True, scale_factor, offset_x, offset_y)
-        else:
-            # Within range - fetch normally
-            return (x, y, z, False, 1, 0, 0)
-
-    def _upsample_tile(self, image: Image.Image, scale_factor: int, offset_x: int, offset_y: int) -> Image.Image:
-        """
-        Upsample a tile by scaling and cropping using bilinear interpolation.
-
-        Args:
-            image: Source tile (256x256)
-            scale_factor: How much to scale (2^zoom_diff)
-            offset_x, offset_y: Which subtile to extract (0 to scale_factor-1)
-
-        Returns:
-            Upsampled 256x256 tile
-        """
-        upscaled_size = 256 * scale_factor
-        scaled_image = image.resize((upscaled_size, upscaled_size), Image.Resampling.BILINEAR)
-
-        left = offset_x * 256
-        top = offset_y * 256
-        right = left + 256
-        bottom = top + 256
-
-        return scaled_image.crop((left, top, right, bottom))
-
-    def _fetch_tile_sync(self, url: str, needs_upsampling: bool = False,
-                         scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0) -> Optional[Image.Image]:
-        """
-        Fetch a tile synchronously using requests and optionally upsample it.
-
-        Args:
-            url: Tile URL
-            needs_upsampling: Whether to upsample the tile
-            scale_factor: Scale factor for upsampling (2^zoom_diff)
-            offset_x: X offset within parent tile (0 to scale_factor-1)
-            offset_y: Y offset within parent tile (0 to scale_factor-1)
-
-        Returns:
-            PIL Image or None if fetch failed
-        """
-        try:
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                tile = Image.open(io.BytesIO(response.content)).convert('RGBA')
-
-                # Upsample if needed using bilinear interpolation
-                if needs_upsampling:
-                    tile = self._upsample_tile(tile, scale_factor, offset_x, offset_y)
-
-                return tile
-            else:
-                logger.warning(f"Failed to fetch tile {url}: HTTP {response.status_code}")
-                return None
-        except Exception as e:
-            logger.warning(f"Error fetching tile {url}: {e}")
-            return None
-
     def _composite_tile_sync(self, x: int, y: int, z: int, compositions: List[LayerComposition]) -> Optional[bytes]:
         """
         Synchronously composite a tile (for use in background threads).
@@ -537,8 +564,8 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                 return buffer.getvalue()
 
             # Fetch all tiles synchronously
-            # Note: Preview ignores LOD settings - uses old _get_effective_tile_coords
-            # which only respects layer min/max zoom, not per-layer LOD configuration
+            # Note: Preview avoids downsampling (uses _get_effective_tile_coords)
+            # but still respects select_zooms LOD configuration
             tiles = []
             for composition in compositions:
                 # Skip disabled layers
@@ -546,9 +573,14 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                     logger.debug(f"Skipping {composition.layer_config.name} (layer disabled)")
                     continue
 
+                # For select_zooms mode, only include layer at explicitly selected zoom levels
+                if composition.lod_mode == "select_zooms" and z not in composition.selected_zooms:
+                    logger.debug(f"Skipping {composition.layer_config.name} at zoom {z} (zoom not in selected_zooms)")
+                    continue
+
                 # Get effective coordinates for this layer
                 fetch_x, fetch_y, fetch_z, needs_upsampling, scale_factor, offset_x, offset_y = \
-                    self._get_effective_tile_coords(x, y, z, composition.layer_config)
+                    self.compositor._get_effective_tile_coords(x, y, z, composition.layer_config)
 
                 if fetch_x is None:
                     # Layer doesn't support this zoom (below min), skip it
@@ -558,8 +590,8 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                 # Build URL with effective coordinates
                 url = composition.layer_config.url_template.format(x=fetch_x, y=fetch_y, z=fetch_z)
 
-                # Fetch and optionally upsample
-                tile = self._fetch_tile_sync(url, needs_upsampling, scale_factor, offset_x, offset_y)
+                # Fetch and optionally upsample using compositor's method
+                tile = self.compositor.fetch_tile_sync(url, needs_upsampling, scale_factor, offset_x, offset_y)
                 if tile:
                     tiles.append((tile, composition.opacity, composition.blend_mode))
                 else:

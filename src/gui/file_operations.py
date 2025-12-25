@@ -24,7 +24,8 @@ class FileOperations:
         self.parent = parent
         self.current_file: Optional[Path] = None
         self.is_dirty = False
-        self.settings = QSettings("AnthropicClaude", "GoogleEarthTileGenerator")
+        # Use default constructor to pick up organization/application from QApplication
+        self.settings = QSettings()
         self.max_recent_files = 10
 
     def save(self, get_state_callback: Callable) -> bool:
