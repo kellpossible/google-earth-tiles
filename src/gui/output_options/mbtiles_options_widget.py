@@ -98,36 +98,6 @@ class MBTilesOptionsWidget(QWidget):
         metadata_group = QGroupBox("Metadata")
         metadata_layout = QVBoxLayout()
 
-        # Name field
-        name_layout = QHBoxLayout()
-        name_layout.addWidget(QLabel("Name:"))
-        self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("Tileset name...")
-        self.name_edit.setText(initial_options.get("metadata_name", "Tile Export"))
-        self.name_edit.textChanged.connect(self._on_option_changed)
-        name_layout.addWidget(self.name_edit, 1)
-        metadata_layout.addLayout(name_layout)
-
-        # Description field
-        desc_layout = QHBoxLayout()
-        desc_layout.addWidget(QLabel("Description:"))
-        self.desc_edit = QLineEdit()
-        self.desc_edit.setPlaceholderText("Optional description...")
-        self.desc_edit.setText(initial_options.get("metadata_description", ""))
-        self.desc_edit.textChanged.connect(self._on_option_changed)
-        desc_layout.addWidget(self.desc_edit, 1)
-        metadata_layout.addLayout(desc_layout)
-
-        # Attribution field
-        attr_layout = QHBoxLayout()
-        attr_layout.addWidget(QLabel("Attribution:"))
-        self.attr_edit = QLineEdit()
-        self.attr_edit.setPlaceholderText("Optional attribution...")
-        self.attr_edit.setText(initial_options.get("metadata_attribution", ""))
-        self.attr_edit.textChanged.connect(self._on_option_changed)
-        attr_layout.addWidget(self.attr_edit, 1)
-        metadata_layout.addLayout(attr_layout)
-
         # Type selection
         type_layout = QHBoxLayout()
         type_layout.addWidget(QLabel("Type:"))
@@ -194,9 +164,6 @@ class MBTilesOptionsWidget(QWidget):
             "image_format": self.format_combo.currentData(),
             "jpeg_quality": self.quality_slider.value(),
             "export_mode": self.export_combo.currentData(),
-            "metadata_name": self.name_edit.text(),
-            "metadata_description": self.desc_edit.text(),
-            "metadata_attribution": self.attr_edit.text(),
             "metadata_type": self.type_combo.currentData(),
         }
 

@@ -57,6 +57,11 @@ extent:
 min_zoom: 12
 max_zoom: 14
 
+# Optional: Global metadata (applies to all outputs)
+name: "My Tileset"
+description: "Optional description of the tileset"
+attribution: "© Custom Attribution 2025"
+
 layers:
   - std
   - name: ort
@@ -67,12 +72,12 @@ outputs:
   - type: kmz
     path: output.kmz
     web_compatible: false
+    attribution_mode: description  # "description" (default) or "overlay"
 
   - type: mbtiles
     path: output.mbtiles
     image_format: png
     export_mode: composite
-    metadata_name: "My Tileset"
     metadata_type: baselayer
 ```
 

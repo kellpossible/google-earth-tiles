@@ -138,6 +138,16 @@ def validate_config(config: dict, layer_registry: dict | None = None) -> None:
     if min_zoom > max_zoom:
         raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
 
+    # Validate metadata fields (all optional)
+    if "name" in config and config["name"] is not None and not isinstance(config["name"], str):
+        raise ValueError("name must be a string or null")
+
+    if "description" in config and config["description"] is not None and not isinstance(config["description"], str):
+        raise ValueError("description must be a string or null")
+
+    if "attribution" in config and config["attribution"] is not None and not isinstance(config["attribution"], str):
+        raise ValueError("attribution must be a string or null")
+
     # Validate outputs
     if not isinstance(config["outputs"], list) or len(config["outputs"]) == 0:
         raise ValueError("outputs must be a non-empty list")
@@ -216,6 +226,12 @@ def run_cli(config_path: str) -> int:
         # Parse zoom configuration
         min_zoom = config["min_zoom"]
         max_zoom = config["max_zoom"]
+
+        # Global metadata (optional)
+        name = config.get("name")
+        description = config.get("description")
+        attribution = config.get("attribution")
+
         include_timestamp = config.get("include_timestamp", True)
         enable_cache = config.get("enable_cache", True)
 
@@ -283,6 +299,9 @@ def run_cli(config_path: str) -> int:
                 max_zoom=max_zoom,
                 layer_compositions=layer_compositions,
                 progress_callback=None,
+                name=name,
+                description=description,
+                attribution=attribution,
                 include_timestamp=include_timestamp,
                 **output_config.options
             )

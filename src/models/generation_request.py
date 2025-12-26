@@ -18,6 +18,9 @@ class GenerationRequest:
     extent: Extent
     outputs: list[OutputConfig]
     include_timestamp: bool = True
+    name: str | None = None
+    description: str | None = None
+    attribution: str | None = None
 
     def __post_init__(self):
         """Validate the generation request."""
@@ -62,4 +65,7 @@ class GenerationRequest:
                 for output in self.outputs
             ],
             include_timestamp=self.include_timestamp,
+            name=self.name,
+            description=self.description,
+            attribution=self.attribution,
         )

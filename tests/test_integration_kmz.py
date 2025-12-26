@@ -331,6 +331,7 @@ def test_custom_layer_sources(snapshot, tile_server):
                     "min_zoom": 10,
                     "max_zoom": 14,
                     "display_name": "Custom Red Layer",
+                    "attribution": "Test Custom Layer",
                     "category": "other",
                 }
             },
@@ -422,6 +423,7 @@ def test_resampling_validation(tile_server):
                     "min_zoom": 10,
                     "max_zoom": 16,
                     "display_name": "Color Coded Layer",
+                    "attribution": "Test Color Coded Layer",
                     "category": "other",
                 }
             },

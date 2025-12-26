@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -595,6 +596,9 @@ class SettingsPanel(QWidget):
         self.current_preview_zoom: int | None = None
         self._suppress_state_changes = False
         self.custom_layer_registry: dict = {}  # Custom layers from layer_sources in config
+        self.current_name: str = ""
+        self.current_description: str = ""
+        self.current_attribution: str = ""
         self.init_ui()
 
     def init_ui(self):
@@ -617,6 +621,46 @@ class SettingsPanel(QWidget):
 
         layer_group.setLayout(layer_layout)
         layout.addWidget(layer_group)
+
+        # Metadata (applies to all outputs)
+        metadata_group = QGroupBox("Metadata (applies to all outputs)")
+        metadata_layout = QVBoxLayout()
+
+        # Name field
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Name:"))
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Tile Export")
+        self.name_edit.textChanged.connect(self._on_metadata_changed)
+        name_layout.addWidget(self.name_edit, 1)
+        metadata_layout.addLayout(name_layout)
+
+        # Description field
+        desc_layout = QHBoxLayout()
+        desc_layout.addWidget(QLabel("Description:"))
+        self.description_edit = QLineEdit()
+        self.description_edit.setPlaceholderText("Optional description...")
+        self.description_edit.textChanged.connect(self._on_metadata_changed)
+        desc_layout.addWidget(self.description_edit, 1)
+        metadata_layout.addLayout(desc_layout)
+
+        # Attribution field (multiline)
+        attr_label = QLabel("Attribution:")
+        metadata_layout.addWidget(attr_label)
+        self.attribution_edit = QPlainTextEdit()
+        self.attribution_edit.setPlaceholderText("Leave empty for auto-generated attribution from layer sources...")
+        self.attribution_edit.setMaximumHeight(80)  # ~3 lines
+        self.attribution_edit.textChanged.connect(self._on_metadata_changed)
+        metadata_layout.addWidget(self.attribution_edit)
+
+        # Info label
+        info_label = QLabel("This metadata will be included in all output formats (MBTiles metadata, KMZ description)")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #666; font-size: 10px;")
+        metadata_layout.addWidget(info_label)
+
+        metadata_group.setLayout(metadata_layout)
+        layout.addWidget(metadata_group)
 
         # Zoom level
         zoom_group = QGroupBox("Zoom Range")
@@ -737,8 +781,9 @@ class SettingsPanel(QWidget):
         self._add_output_widget(default_output)
 
     def _on_layer_changed(self):
-        """Handle layer list change (add/remove/reorder) - updates zoom limits."""
+        """Handle layer list change (add/remove/reorder) - updates zoom limits and attribution placeholder."""
         self._update_zoom_range()
+        self._update_attribution_placeholder()
         self.changed.emit()  # Trigger map preview update WITH zoom limit update
         self._update_estimates()
         self._update_move_buttons()
@@ -749,6 +794,32 @@ class SettingsPanel(QWidget):
         self._update_estimates()
         self._update_all_layer_multi_mode()  # Update blend/export controls based on enabled layer count
         self.settings_changed_no_zoom.emit()
+
+    def _on_metadata_changed(self):
+        """Handle metadata field changes (name, description, attribution)."""
+        self.current_name = self.name_edit.text().strip()
+        self.current_description = self.description_edit.text().strip()
+        self.current_attribution = self.attribution_edit.toPlainText().strip()
+        self._emit_state_changed()
+
+    def _update_attribution_placeholder(self):
+        """Update attribution placeholder with auto-calculated value from layers."""
+        layer_compositions = self.get_layer_compositions()
+        if not layer_compositions:
+            self.attribution_edit.setPlaceholderText(
+                "Leave empty for auto-generated attribution from layer sources..."
+            )
+            return
+
+        from src.utils.attribution import build_attribution_from_layers
+        auto_attribution = build_attribution_from_layers(layer_compositions)
+
+        if auto_attribution:
+            self.attribution_edit.setPlaceholderText(f"Leave empty to use: {auto_attribution}")
+        else:
+            self.attribution_edit.setPlaceholderText(
+                "Leave empty for auto-generated attribution from layer sources..."
+            )
 
     def _move_layer_up(self, widget: LayerItemWidget):
         """Move layer up in the composition order."""
@@ -1119,6 +1190,9 @@ class SettingsPanel(QWidget):
             max_zoom=max_zoom,
             extent=self.current_extent,
             outputs=outputs,
+            name=self.current_name if self.current_name else None,
+            description=self.current_description if self.current_description else None,
+            attribution=self.current_attribution if self.current_attribution else None,
         )
 
         self.generate_requested.emit(request)
@@ -1167,6 +1241,9 @@ class SettingsPanel(QWidget):
             "extent": self.current_extent.to_dict(),
             "min_zoom": min_zoom,
             "max_zoom": max_zoom,
+            "name": self.current_name if self.current_name else None,
+            "description": self.current_description if self.current_description else None,
+            "attribution": self.current_attribution if self.current_attribution else None,
             "outputs": outputs,
             "layers": [comp.to_dict() for comp in layer_compositions],
         }
@@ -1256,6 +1333,19 @@ class SettingsPanel(QWidget):
             self.south_edit.setText(f"{extent.min_lat:.6f}")
             self.east_edit.setText(f"{extent.max_lon:.6f}")
             self.west_edit.setText(f"{extent.min_lon:.6f}")
+
+            # 7. Load metadata (name, description, attribution)
+            name = state.get("name", "")
+            self.current_name = name
+            self.name_edit.setText(name)
+
+            description = state.get("description", "")
+            self.current_description = description
+            self.description_edit.setText(description)
+
+            attribution = state.get("attribution", "")
+            self.current_attribution = attribution
+            self.attribution_edit.setPlainText(attribution)
 
         finally:
             self._suppress_state_changes = False

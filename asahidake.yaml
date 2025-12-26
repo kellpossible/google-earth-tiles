@@ -5,19 +5,20 @@ extent:
   max_lat: 43.682522120039025
 min_zoom: 12
 max_zoom: 16
+attribution: null
 outputs:
 - type: mbtiles
   path: /Users/luke/programming/google-earth-tile-generator/asahidake.mbtiles
   image_format: png
   jpeg_quality: 80
   export_mode: composite
-  metadata_name: Tile Export
-  metadata_description: Asahidake
-  metadata_attribution: ''
+  metadata_name: Asahidake
+  metadata_description: Topo and Avalanche Zone Map of Asahidake
   metadata_type: baselayer
 - type: kmz
   path: /Users/luke/programming/google-earth-tile-generator/asahidake.kmz
   web_compatible: false
+  attribution_mode: description
 layers:
 - name: std
   opacity: 100

@@ -42,6 +42,9 @@ class KMZOutputHandler:
         max_zoom: int,
         layer_compositions: list[LayerComposition],
         progress_callback=None,
+        name: str | None = None,
+        description: str | None = None,
+        attribution: str | None = None,
         **options
     ) -> Path:
         """Generate a KMZ file.
@@ -53,19 +56,22 @@ class KMZOutputHandler:
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions to include
             progress_callback: Optional callback for progress updates
+            attribution: Global attribution string (optional, auto-generates from layers if None)
             **options: KMZ-specific options:
                 - web_compatible (bool): Enable web compatible mode (default: False)
                 - include_timestamp (bool): Include timestamp in KML (default: True)
+                - attribution_mode (str): "description" or "overlay" (default: "description")
 
         Returns:
             Path to the created KMZ file
         """
         web_compatible = options.get("web_compatible", False)
         include_timestamp = options.get("include_timestamp", True)
+        attribution_mode = options.get("attribution_mode", "description")
 
         generator = KMZGenerator(output_path, progress_callback)
         return generator.create_kmz(
-            extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp
+            extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, attribution, attribution_mode
         )
 
     def estimate_tiles(
@@ -161,6 +167,7 @@ class KMZOutputHandler:
         return {
             "web_compatible": False,
             "include_timestamp": True,
+            "attribution_mode": "description",  # "description" or "overlay"
         }
 
     @staticmethod
@@ -178,3 +185,6 @@ class KMZOutputHandler:
 
         if "include_timestamp" in options and not isinstance(options["include_timestamp"], bool):
             raise ValueError("include_timestamp must be a boolean")
+
+        if "attribution_mode" in options and options["attribution_mode"] not in ["description", "overlay"]:
+            raise ValueError("attribution_mode must be 'description' or 'overlay'")

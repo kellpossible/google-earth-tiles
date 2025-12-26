@@ -8,6 +8,7 @@ from src.core.mbtiles_generator import MBTilesGenerator
 from src.core.tile_calculator import TileCalculator
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
+from src.utils.attribution import build_attribution_from_layers
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,6 @@ class MBTilesOutputHandler:
             "export_mode": "composite",  # "composite" or "separate"
             "jpeg_quality": 80,  # 1-100 for JPEG compression
             # Metadata fields
-            "metadata_name": "Tile Export",
-            "metadata_description": "",
-            "metadata_attribution": "",
             "metadata_type": "baselayer",  # "overlay" or "baselayer"
         }
 
@@ -86,6 +84,9 @@ class MBTilesOutputHandler:
         max_zoom: int,
         layer_compositions: list[LayerComposition],
         progress_callback=None,
+        name: str | None = None,
+        description: str | None = None,
+        attribution: str | None = None,
         **options,
     ) -> Path:
         """Generate MBTiles file(s).
@@ -97,13 +98,13 @@ class MBTilesOutputHandler:
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions to include
             progress_callback: Optional callback for progress updates
+            name: Global name/title for the tileset (default: "Tile Export")
+            description: Global description for the tileset (optional)
+            attribution: Global attribution string (optional, auto-generates from layers if None)
             **options: MBTiles-specific options:
                 - image_format (str): "png" or "jpg" (default: "png")
                 - export_mode (str): "composite" or "separate" (default: "composite")
                 - jpeg_quality (int): JPEG quality 1-100 (default: 80)
-                - metadata_name (str): Tileset name
-                - metadata_description (str): Tileset description
-                - metadata_attribution (str): Attribution HTML
                 - metadata_type (str): "overlay" or "baselayer"
 
         Returns:
@@ -113,12 +114,33 @@ class MBTilesOutputHandler:
 
         if export_mode == "composite":
             return self._generate_composite(
-                output_path, extent, min_zoom, max_zoom, layer_compositions, progress_callback, **options
+                output_path, extent, min_zoom, max_zoom, layer_compositions, progress_callback, name, description, attribution, **options
             )
         else:
             return self._generate_separate(
-                output_path, extent, min_zoom, max_zoom, layer_compositions, progress_callback, **options
+                output_path, extent, min_zoom, max_zoom, layer_compositions, progress_callback, name, description, attribution, **options
             )
+
+    @staticmethod
+    def _build_attribution(layer_compositions: list[LayerComposition], user_attribution: str) -> str:
+        """Build attribution string from layer sources.
+
+        If user_attribution is empty, automatically concatenates unique attributions
+        from all enabled layers.
+
+        Args:
+            layer_compositions: List of layer compositions
+            user_attribution: User-provided attribution (may be empty)
+
+        Returns:
+            Attribution string (user-provided or auto-generated from layers)
+        """
+        # If user provided attribution, use it as-is
+        if user_attribution:
+            return user_attribution
+
+        # Otherwise, use shared attribution builder
+        return build_attribution_from_layers(layer_compositions)
 
     def _generate_composite(
         self,
@@ -128,6 +150,9 @@ class MBTilesOutputHandler:
         max_zoom: int,
         layer_compositions: list[LayerComposition],
         progress_callback,
+        name: str | None = None,
+        description: str | None = None,
+        attribution: str | None = None,
         **options,
     ) -> Path:
         """Generate single composite MBTiles file.
@@ -150,15 +175,18 @@ class MBTilesOutputHandler:
 
         generator = MBTilesGenerator(output_path, progress_callback)
 
-        metadata_config = {
-            "name": options.get("metadata_name", "Tile Export"),
-            "description": options.get("metadata_description", ""),
-            "attribution": options.get("metadata_attribution", ""),
-            "type": options.get("metadata_type", "overlay"),
-        }
-
         # Filter to enabled layers only
         enabled_layers = [comp for comp in layer_compositions if comp.enabled]
+
+        # Build attribution (auto-generate from layers if not provided)
+        final_attribution = self._build_attribution(enabled_layers, attribution or "")
+
+        metadata_config = {
+            "name": name or "Tile Export",
+            "description": description or "",
+            "attribution": final_attribution,
+            "type": options.get("metadata_type", "overlay"),
+        }
 
         # Run async generation (Python 3.14 compatible)
         return asyncio.run(
@@ -181,6 +209,9 @@ class MBTilesOutputHandler:
         max_zoom: int,
         layer_compositions: list[LayerComposition],
         progress_callback,
+        name: str | None = None,
+        description: str | None = None,
+        attribution: str | None = None,
         **options,
     ) -> Path:
         """Generate separate MBTiles files, one per layer.
@@ -209,12 +240,15 @@ class MBTilesOutputHandler:
             # Build file path: {base_name}_{layer_id}.mbtiles
             layer_output = parent_dir / f"{base_name}_{layer_id}.mbtiles"
 
+            # Build attribution for this specific layer
+            layer_attribution = self._build_attribution([layer_comp], attribution or "")
+
             # Update metadata name to include layer
-            base_metadata_name = options.get("metadata_name", "Tile Export")
+            metadata_name = name or "Tile Export"
             layer_metadata = {
-                "name": f"{base_metadata_name} - {layer_id}",
-                "description": options.get("metadata_description", ""),
-                "attribution": options.get("metadata_attribution", ""),
+                "name": f"{metadata_name} - {layer_id}",
+                "description": description or "",
+                "attribution": layer_attribution,
                 "type": options.get("metadata_type", "overlay"),
             }
 

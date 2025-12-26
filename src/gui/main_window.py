@@ -95,6 +95,9 @@ class ExportWorker(QThread):
                     max_zoom=max_zoom,
                     layer_compositions=self.request.layer_compositions,
                     progress_callback=kmz_progress,
+                    name=self.request.name,
+                    description=self.request.description,
+                    attribution=self.request.attribution,
                     **output_config.options
                 )
                 result_paths.append(result_path)

@@ -1,7 +1,7 @@
 """KMZ output format options widget."""
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QCheckBox, QGroupBox, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
@@ -50,6 +50,25 @@ class KMZOptionsWidget(QWidget):
         self.web_compatible_checkbox.stateChanged.connect(self._on_option_changed)
         layout.addWidget(self.web_compatible_checkbox)
 
+        # Attribution display mode selection
+        attribution_layout = QHBoxLayout()
+        attribution_layout.addWidget(QLabel("Attribution Display:"))
+        self.attribution_mode_combo = QComboBox()
+        self.attribution_mode_combo.addItem("Document Description", "description")
+        self.attribution_mode_combo.addItem("Screen Overlay", "overlay")
+        attribution_mode = initial_options.get("attribution_mode", "description")
+        idx = self.attribution_mode_combo.findData(attribution_mode)
+        if idx >= 0:
+            self.attribution_mode_combo.setCurrentIndex(idx)
+        self.attribution_mode_combo.setToolTip(
+            "Choose how to display attribution in Google Earth:\n"
+            "• Document Description: Shows in the Places panel (non-intrusive)\n"
+            "• Screen Overlay: Shows as overlay on the map view"
+        )
+        self.attribution_mode_combo.currentIndexChanged.connect(self._on_option_changed)
+        attribution_layout.addWidget(self.attribution_mode_combo, 1)
+        layout.addLayout(attribution_layout)
+
         # Estimates group
         estimate_group = QGroupBox("Estimates")
         estimate_layout = QVBoxLayout()
@@ -79,6 +98,7 @@ class KMZOptionsWidget(QWidget):
         """
         return {
             "web_compatible": self.web_compatible_checkbox.isChecked(),
+            "attribution_mode": self.attribution_mode_combo.currentData(),
         }
 
     def update_estimates(

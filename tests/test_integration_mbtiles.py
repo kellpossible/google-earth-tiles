@@ -22,6 +22,9 @@ def test_mbtiles_basic_single_layer_png(snapshot):
             },
             "min_zoom": 12,
             "max_zoom": 12,
+            "name": "Test Tileset",
+            "description": "Test description",
+            "attribution": "Test attribution",
             "layers": ["std"],
             "outputs": [
                 {
@@ -29,9 +32,6 @@ def test_mbtiles_basic_single_layer_png(snapshot):
                     "path": str(temp_path / "output.mbtiles"),
                     "image_format": "png",
                     "export_mode": "composite",
-                    "metadata_name": "Test Tileset",
-                    "metadata_description": "Test description",
-                    "metadata_attribution": "Test attribution",
                     "metadata_type": "overlay",
                 }
             ],
@@ -64,6 +64,7 @@ def test_mbtiles_jpeg_format(snapshot):
             },
             "min_zoom": 12,
             "max_zoom": 12,
+            "name": "JPEG Tileset",
             "layers": ["std"],
             "outputs": [
                 {
@@ -72,7 +73,6 @@ def test_mbtiles_jpeg_format(snapshot):
                     "image_format": "jpg",
                     "jpeg_quality": 90,
                     "export_mode": "composite",
-                    "metadata_name": "JPEG Tileset",
                     "metadata_type": "overlay",
                 }
             ],
@@ -103,6 +103,7 @@ def test_mbtiles_separate_export_mode(snapshot):
             },
             "min_zoom": 12,
             "max_zoom": 12,
+            "name": "Separate Layers",
             "layers": [
                 "std",
                 {"name": "slopezone1map", "opacity": 70},
@@ -113,7 +114,6 @@ def test_mbtiles_separate_export_mode(snapshot):
                     "path": str(temp_path / "output.mbtiles"),
                     "image_format": "png",
                     "export_mode": "separate",
-                    "metadata_name": "Separate Layers",
                     "metadata_type": "overlay",
                 }
             ],

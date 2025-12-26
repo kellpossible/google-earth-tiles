@@ -143,6 +143,37 @@ class KMZGenerator(BaseTileGenerator):
 
             logger.info(f"Added {len(tiles)} tiles for {layer_name} at zoom {zoom_level} to KML")
 
+    def _add_attribution_overlay(self, attribution: str | None, layer_compositions: list[LayerComposition]):
+        """
+        Add attribution as a screen overlay in the bottom-left corner.
+
+        Args:
+            attribution: Attribution text (or None to auto-generate)
+            layer_compositions: List of layer compositions for auto-generation
+        """
+        # Get attribution text
+        if attribution:
+            attr_text = attribution
+        else:
+            from src.utils.attribution import build_attribution_from_layers
+            attr_text = build_attribution_from_layers(layer_compositions)
+
+        # Only add overlay if we have attribution text
+        if not attr_text:
+            return
+
+        # Create screen overlay
+        screen = self.kml.newscreenoverlay(name="Attribution")
+        screen.icon.href = ""  # No icon, just text via description
+        screen.description = attr_text
+
+        # Position in bottom-left corner
+        screen.overlayxy = simplekml.OverlayXY(x=0, y=0, xunits=simplekml.Units.fraction, yunits=simplekml.Units.fraction)
+        screen.screenxy = simplekml.ScreenXY(x=10, y=10, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)
+        screen.size = simplekml.Size(x=0, y=0, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)
+
+        logger.info("Added attribution screen overlay to KML")
+
     async def create_kmz_async(
         self,
         extent: Extent,
@@ -151,6 +182,8 @@ class KMZGenerator(BaseTileGenerator):
         layer_compositions: list[LayerComposition],
         web_compatible: bool = False,
         include_timestamp: bool = True,
+        attribution: str | None = None,
+        attribution_mode: str = "description",
     ) -> Path:
         """
         Create KMZ file with composited and/or separate layers.
@@ -165,6 +198,9 @@ class KMZGenerator(BaseTileGenerator):
             max_zoom: Maximum zoom level
             layer_compositions: List of LayerComposition objects
             web_compatible: Enable Google Earth Web compatibility mode (default False)
+            include_timestamp: Include timestamp in KML document description (default True)
+            attribution: Global attribution string (optional, auto-generates from layers if None)
+            attribution_mode: How to display attribution - "description" or "overlay" (default "description")
 
         Returns:
             Path to created KMZ file
@@ -212,7 +248,7 @@ class KMZGenerator(BaseTileGenerator):
 
             logger.info(f"Web compatible mode: Using zoom {actual_zoom} (range: {min_zoom}-{max_zoom})")
 
-            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions, include_timestamp)
+            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions, include_timestamp, attribution, attribution_mode)
 
         # Separate layers by export mode (handles single-layer special case)
         composited_layers, separate_layers = self.separate_layers_by_export_mode(layer_compositions)
@@ -226,12 +262,27 @@ class KMZGenerator(BaseTileGenerator):
         else:
             self.kml.document.name = f"GSI Tiles - Zoom {max_zoom}"
 
-        # Set description with optional timestamp
-        base_description = "GSI Tiles from https://maps.gsi.go.jp"
+        # Build description (conditionally include attribution based on mode)
+        description_parts = []
+
+        # Add attribution to description only if mode is "description"
+        if attribution_mode == "description":
+            if attribution:
+                description_parts.append(attribution)
+            else:
+                from src.utils.attribution import build_attribution_from_layers
+                auto_attr = build_attribution_from_layers(layer_compositions)
+                if auto_attr:
+                    description_parts.append(auto_attr)
+
+        # Add base description
+        description_parts.append("GSI Tiles from https://maps.gsi.go.jp")
+
+        # Add timestamp if requested
         if include_timestamp:
-            self.kml.document.description = f"{base_description}\nGenerated: {datetime.now().isoformat()}"
-        else:
-            self.kml.document.description = base_description
+            description_parts.append(f"Generated: {datetime.now().isoformat()}")
+
+        self.kml.document.description = "\n\n".join(description_parts)
 
         # Create temporary directory for tiles
         temp_dir = Path(tempfile.mkdtemp())
@@ -335,6 +386,10 @@ class KMZGenerator(BaseTileGenerator):
                         layer_name, separate_layers_tiles[layer_name], layer_comp.opacity, lod_kml_config
                     )
 
+            # Add screen overlay for attribution if mode is "overlay"
+            if attribution_mode == "overlay":
+                self._add_attribution_overlay(attribution, layer_compositions)
+
             # Save KML
             self.kml.save(str(kml_temp_path))
 
@@ -367,6 +422,8 @@ class KMZGenerator(BaseTileGenerator):
         layer_compositions: list[LayerComposition],
         web_compatible: bool = False,
         include_timestamp: bool = True,
+        attribution: str | None = None,
+        attribution_mode: str = "description",
     ) -> Path:
         """
         Create KMZ file with composited tiles and optional LOD (synchronous wrapper).
@@ -377,13 +434,16 @@ class KMZGenerator(BaseTileGenerator):
             max_zoom: Maximum zoom level
             layer_compositions: List of LayerComposition objects
             web_compatible: Enable Google Earth Web compatibility mode (default False)
+            include_timestamp: Include timestamp in KML document description (default True)
+            attribution: Global attribution string (optional, auto-generates from layers if None)
+            attribution_mode: How to display attribution - "description" or "overlay" (default "description")
 
         Returns:
             Path to created KMZ file
         """
         # Run async version (Python 3.14 compatible)
         return asyncio.run(
-            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp)
+            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, attribution, attribution_mode)
         )
 
     def _add_composited_tiles(
@@ -637,7 +697,7 @@ class KMZGenerator(BaseTileGenerator):
         return canvas
 
     async def _create_kmz_web_compatible(
-        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition], include_timestamp: bool = True
+        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition], include_timestamp: bool = True, attribution: str | None = None, attribution_mode: str = "description"
     ) -> Path:
         """
         Create web-compatible KMZ with merged chunks.
@@ -656,12 +716,28 @@ class KMZGenerator(BaseTileGenerator):
         # Set document metadata
         self.kml.document.name = f"GSI Tiles - Zoom {zoom} (Web Compatible)"
 
-        # Set description with optional timestamp
-        base_description = "GSI Tiles from https://maps.gsi.go.jp\nOptimized for Google Earth Web"
+        # Build description (conditionally include attribution based on mode)
+        description_parts = []
+
+        # Add attribution to description only if mode is "description"
+        if attribution_mode == "description":
+            if attribution:
+                description_parts.append(attribution)
+            else:
+                from src.utils.attribution import build_attribution_from_layers
+                auto_attr = build_attribution_from_layers(layer_compositions)
+                if auto_attr:
+                    description_parts.append(auto_attr)
+
+        # Add base description
+        description_parts.append("GSI Tiles from https://maps.gsi.go.jp")
+        description_parts.append("Optimized for Google Earth Web")
+
+        # Add timestamp if requested
         if include_timestamp:
-            self.kml.document.description = f"{base_description}\nGenerated: {datetime.now().isoformat()}"
-        else:
-            self.kml.document.description = base_description
+            description_parts.append(f"Generated: {datetime.now().isoformat()}")
+
+        self.kml.document.description = "\n\n".join(description_parts)
 
         temp_dir = Path(tempfile.mkdtemp())
         kml_temp_path = None
@@ -770,6 +846,10 @@ class KMZGenerator(BaseTileGenerator):
                     self._add_separate_layer_chunks(
                         layer_name, separate_chunks_by_layer[layer_name], zoom, layer_comp.opacity
                     )
+
+            # Add screen overlay for attribution if mode is "overlay"
+            if attribution_mode == "overlay":
+                self._add_attribution_overlay(attribution, layer_compositions)
 
             # Save KML
             self.kml.save(str(kml_temp_path))

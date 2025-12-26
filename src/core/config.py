@@ -54,6 +54,7 @@ class LayerConfig:
     full_description: str
     info_url: str
     category: str
+    attribution: str
     custom_url_template: str | None = None
 
     @property
@@ -83,6 +84,7 @@ LAYERS: dict[str, LayerConfig] = {
         "reference mapping across Japan and surrounding regions.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="basemap",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "pale": LayerConfig(
         name="pale",
@@ -98,6 +100,7 @@ LAYERS: dict[str, LayerConfig] = {
         "geographic context.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="basemap",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "english": LayerConfig(
         name="english",
@@ -112,6 +115,7 @@ LAYERS: dict[str, LayerConfig] = {
         "applications, and global users requiring romanized toponymy.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="basemap",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ort": LayerConfig(
         name="ort",
@@ -127,6 +131,7 @@ LAYERS: dict[str, LayerConfig] = {
         "Updated regularly to reflect current ground conditions.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "relief": LayerConfig(
         name="relief",
@@ -142,6 +147,7 @@ LAYERS: dict[str, LayerConfig] = {
         "Useful for understanding regional topography and terrain characteristics.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "seamlessphoto": LayerConfig(
         name="seamlessphoto",
@@ -157,6 +163,7 @@ LAYERS: dict[str, LayerConfig] = {
         "conditions, land use patterns, and development status.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "blank": LayerConfig(
         name="blank",
@@ -171,6 +178,7 @@ LAYERS: dict[str, LayerConfig] = {
         "custom mapping projects and data visualization.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="basemap",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "hillshademap": LayerConfig(
         name="hillshademap",
@@ -185,6 +193,7 @@ LAYERS: dict[str, LayerConfig] = {
         "understanding topographic features and terrain comprehension.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "slopemap": LayerConfig(
         name="slopemap",
@@ -199,6 +208,7 @@ LAYERS: dict[str, LayerConfig] = {
         "slope-related hazards.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "lcm25k": LayerConfig(
         name="lcm25k",
@@ -213,6 +223,7 @@ LAYERS: dict[str, LayerConfig] = {
         "at high zoom levels.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "sekishoku": LayerConfig(
         name="sekishoku",
@@ -227,6 +238,7 @@ LAYERS: dict[str, LayerConfig] = {
         "geomorphological structures easily visible.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Land Formation & Land Use Maps
     "lcm25k_2012": LayerConfig(
@@ -241,6 +253,7 @@ LAYERS: dict[str, LayerConfig] = {
         "surface geology, and natural features.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ccm1": LayerConfig(
         name="ccm1",
@@ -254,6 +267,7 @@ LAYERS: dict[str, LayerConfig] = {
         "geomorphological features of coastal zones.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ccm2": LayerConfig(
         name="ccm2",
@@ -267,6 +281,7 @@ LAYERS: dict[str, LayerConfig] = {
         "features prior to 1988.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "vbm": LayerConfig(
         name="vbm",
@@ -280,6 +295,7 @@ LAYERS: dict[str, LayerConfig] = {
         "geological formations, and volcanic structures.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "vbmd_bm": LayerConfig(
         name="vbmd_bm",
@@ -292,6 +308,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Digital volcano base map data with detailed topographic information.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "vbmd_colorrel": LayerConfig(
         name="vbmd_colorrel",
@@ -304,6 +321,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Volcano maps with shaded relief and color-coded elevation.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "vbmd_pm": LayerConfig(
         name="vbmd_pm",
@@ -316,6 +334,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Aerial photography of volcanic areas.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "vlcd": LayerConfig(
         name="vlcd",
@@ -328,6 +347,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Land condition classification for volcanic areas.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "lum200k": LayerConfig(
         name="lum200k",
@@ -340,6 +360,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Land use classification maps at 1:200,000 scale.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "lake1": LayerConfig(
         name="lake1",
@@ -352,6 +373,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Detailed maps of lakes showing bathymetry and features.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "lakedata": LayerConfig(
         name="lakedata",
@@ -364,6 +386,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Digital lake data with detailed information.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Historical Aerial Photos
     "gazo1": LayerConfig(
@@ -377,6 +400,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical aerial photographs from 1974 to 1978.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "gazo2": LayerConfig(
         name="gazo2",
@@ -389,6 +413,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical aerial photographs from 1979 to 1983.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "gazo3": LayerConfig(
         name="gazo3",
@@ -401,6 +426,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical aerial photographs from 1984 to 1986.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "gazo4": LayerConfig(
         name="gazo4",
@@ -413,6 +439,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical aerial photographs from 1987 to 1990.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ort_old10": LayerConfig(
         name="ort_old10",
@@ -425,6 +452,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical aerial photographs from 1961 to 1969.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ort_USA10": LayerConfig(
         name="ort_USA10",
@@ -437,6 +465,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical aerial photographs taken by US military from 1945 to 1950.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ort_riku10": LayerConfig(
         name="ort_riku10",
@@ -449,6 +478,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Pre-war aerial photographs from approximately 1936 to 1942.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ort_1928": LayerConfig(
         name="ort_1928",
@@ -461,6 +491,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical aerial photographs from approximately 1928.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "airphoto": LayerConfig(
         name="airphoto",
@@ -473,6 +504,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Simplified aerial photographs from 2004 onwards.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "lndst": LayerConfig(
         name="lndst",
@@ -485,6 +517,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Nationwide mosaic imagery from Landsat satellites.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "modis": LayerConfig(
         name="modis",
@@ -497,6 +530,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Global satellite mosaic imagery from MODIS.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="photo",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Post-2011 Earthquake Orthophotos
     "toho1": LayerConfig(
@@ -511,6 +545,7 @@ LAYERS: dict[str, LayerConfig] = {
         "covering March through April 2011.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="disaster_eq",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "toho2": LayerConfig(
         name="toho2",
@@ -524,6 +559,7 @@ LAYERS: dict[str, LayerConfig] = {
         "recovery and damage assessment.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="disaster_eq",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "toho3": LayerConfig(
         name="toho3",
@@ -537,6 +573,7 @@ LAYERS: dict[str, LayerConfig] = {
         "reconstruction phases.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="disaster_eq",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "toho4": LayerConfig(
         name="toho4",
@@ -550,6 +587,7 @@ LAYERS: dict[str, LayerConfig] = {
         "showing continued reconstruction.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="disaster_eq",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Additional Terrain Maps
     "earthhillshade": LayerConfig(
@@ -563,6 +601,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Global hillshade relief map showing terrain features worldwide.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "anaglyphmap_gray": LayerConfig(
         name="anaglyphmap_gray",
@@ -575,6 +614,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="3D anaglyph terrain visualization in grayscale for red-cyan glasses.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "anaglyphmap_color": LayerConfig(
         name="anaglyphmap_color",
@@ -587,6 +627,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="3D anaglyph terrain visualization in color for red-cyan glasses.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "slopezone1map": LayerConfig(
         name="slopezone1map",
@@ -599,6 +640,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="National slope zone classification map for avalanche risk assessment.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Digital Elevation Models
     "dem_png": LayerConfig(
@@ -613,6 +655,7 @@ LAYERS: dict[str, LayerConfig] = {
         "rendered as color-coded PNG images for visual terrain representation.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "dem5a_png": LayerConfig(
         name="dem5a_png",
@@ -626,6 +669,7 @@ LAYERS: dict[str, LayerConfig] = {
         "terrain visualization.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "dem5b_png": LayerConfig(
         name="dem5b_png",
@@ -639,6 +683,7 @@ LAYERS: dict[str, LayerConfig] = {
         "survey methodologies.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "dem5c_png": LayerConfig(
         name="dem5c_png",
@@ -652,6 +697,7 @@ LAYERS: dict[str, LayerConfig] = {
         "topographic dataset.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="elevation",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Thematic Maps
     "afm": LayerConfig(
@@ -665,6 +711,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Active fault maps for urban areas showing earthquake fault lines.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "lcmfc2": LayerConfig(
         name="lcmfc2",
@@ -677,6 +724,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Terrain classification maps for water management and flood control planning.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "swale": LayerConfig(
         name="swale",
@@ -689,6 +737,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Historical wetland and low-lying areas from the Meiji period.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "ndvi_250m_2012_08": LayerConfig(
         name="ndvi_250m_2012_08",
@@ -701,6 +750,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="National vegetation index data at 250m resolution from August 2012.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="landuse",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2020_chijiki_d": LayerConfig(
         name="jikizu2020_chijiki_d",
@@ -713,6 +763,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Magnetic declination map for 2020.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2020_chijiki_i": LayerConfig(
         name="jikizu2020_chijiki_i",
@@ -725,6 +776,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Magnetic inclination angle map for 2020.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2020_chijiki_f": LayerConfig(
         name="jikizu2020_chijiki_f",
@@ -737,6 +789,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Total magnetic force map for 2020.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2020_chijiki_h": LayerConfig(
         name="jikizu2020_chijiki_h",
@@ -749,6 +802,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Horizontal magnetic component map for 2020.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2020_chijiki_z": LayerConfig(
         name="jikizu2020_chijiki_z",
@@ -761,6 +815,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Vertical magnetic component map for 2020.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2015_chijiki_d": LayerConfig(
         name="jikizu2015_chijiki_d",
@@ -773,6 +828,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Magnetic declination map for 2015.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2015_chijiki_i": LayerConfig(
         name="jikizu2015_chijiki_i",
@@ -785,6 +841,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Magnetic inclination angle map for 2015.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2015_chijiki_f": LayerConfig(
         name="jikizu2015_chijiki_f",
@@ -797,6 +854,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Total magnetic force map for 2015.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2015_chijiki_h": LayerConfig(
         name="jikizu2015_chijiki_h",
@@ -809,6 +867,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Horizontal magnetic component map for 2015.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu2015_chijiki_z": LayerConfig(
         name="jikizu2015_chijiki_z",
@@ -821,6 +880,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Vertical magnetic component map for 2015.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu_chijikid": LayerConfig(
         name="jikizu_chijikid",
@@ -833,6 +893,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Magnetic declination map for 2010.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu_chijikii": LayerConfig(
         name="jikizu_chijikii",
@@ -845,6 +906,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Magnetic inclination angle map for 2010.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu_chijikif": LayerConfig(
         name="jikizu_chijikif",
@@ -857,6 +919,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Total magnetic force map for 2010.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu_chijikih": LayerConfig(
         name="jikizu_chijikih",
@@ -869,6 +932,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Horizontal magnetic component map for 2010.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "jikizu_chijikiz": LayerConfig(
         name="jikizu_chijikiz",
@@ -881,6 +945,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Vertical magnetic component map for 2010.0 epoch.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="reference",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Forest Maps
     "rinya": LayerConfig(
@@ -894,6 +959,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Aerial photographs of national forests.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="other",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "rinya_m": LayerConfig(
         name="rinya_m",
@@ -906,6 +972,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Aerial photographs of private forests.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="other",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     # Global Land Cover
     "gmld_glcnmo2": LayerConfig(
@@ -919,6 +986,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Global land cover classification from GLCNMO dataset.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="other",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
     "gmld_ptc2": LayerConfig(
         name="gmld_ptc2",
@@ -931,6 +999,7 @@ LAYERS: dict[str, LayerConfig] = {
         full_description="Global vegetation coverage showing tree cover percentage.",
         info_url="https://maps.gsi.go.jp/development/ichiran.html",
         category="other",
+        attribution="© Geospatial Information Authority of Japan (GSI)",
     ),
 }
 
@@ -1022,9 +1091,13 @@ def create_layer_config_from_dict(layer_name: str, layer_def: dict) -> LayerConf
     Returns:
         LayerConfig object with custom_url_template set
 
-    Required keys: url_template, extension, min_zoom, max_zoom
+    Required keys: url_template, extension, min_zoom, max_zoom, attribution
     Optional keys: display_name, description, japanese_name, full_description, info_url, category
     """
+    # Attribution is required
+    if "attribution" not in layer_def:
+        raise ValueError(f"Custom layer '{layer_name}': attribution is required")
+
     return LayerConfig(
         name=layer_name,
         display_name=layer_def.get("display_name", layer_name),
@@ -1036,6 +1109,7 @@ def create_layer_config_from_dict(layer_name: str, layer_def: dict) -> LayerConf
         full_description=layer_def.get("full_description", ""),
         info_url=layer_def.get("info_url", ""),
         category=layer_def.get("category", "other"),
+        attribution=layer_def["attribution"],
         custom_url_template=layer_def["url_template"],
     )
 
