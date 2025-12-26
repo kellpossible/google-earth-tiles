@@ -231,7 +231,8 @@ class FileOperations:
         )
         msg.setDefaultButton(QMessageBox.StandardButton.Save)
 
-        return msg.exec()
+        # exec() returns int, cast to StandardButton for type safety
+        return QMessageBox.StandardButton(msg.exec())
 
     def prompt_save_before_close(self, get_state_callback: Callable) -> bool:
         """

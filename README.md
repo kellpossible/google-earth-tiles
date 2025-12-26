@@ -168,6 +168,49 @@ google-earth-tile-generator/
 └── README.md
 ```
 
+### Type Checking
+
+To run type checking:
+
+```bash
+just lint
+```
+
+To check specific files or directories:
+
+```bash
+just lint-path src/core/
+```
+
+#### IDE Integration
+
+This project uses [ty](https://docs.astral.sh/ty/) which includes a language server that provides IDE features like auto-completion, type hints, and inline diagnostics.
+
+**VS Code**
+
+Add to your `.vscode/settings.json`:
+```json
+{
+  "ty.lsp.enable": true
+}
+```
+
+Install the ty extension from the VS Code marketplace (when available) or configure manually.
+
+**PyCharm**
+
+ty support in PyCharm is available through the ty plugin. See [ty editor integration docs](https://docs.astral.sh/ty/editors/) for installation instructions.
+
+**Neovim**
+
+Configure ty as a language server in your LSP setup. Example with `nvim-lspconfig`:
+
+```lua
+require('lspconfig').ty.setup{}
+```
+
+For detailed setup instructions, see the [ty editor integration guide](https://docs.astral.sh/ty/editors/).
+
 ### Running Tests
 
 ```bash

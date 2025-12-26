@@ -2,7 +2,9 @@
 
 import logging
 from pathlib import Path
+from typing import Optional
 
+from PyQt6 import QtGui
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
@@ -495,14 +497,16 @@ class MainWindow(QMainWindow):
         self.file_ops.clear_recent_files()
         self._update_recent_files_menu()
 
-    def closeEvent(self, event):
+    def closeEvent(self, a0: Optional[QtGui.QCloseEvent]) -> None:
         """
         Handle window close event.
 
         Args:
-            event: Close event
+            a0: Close event
         """
-        if self.file_ops.prompt_save_before_close(self.settings_panel.get_state_dict):
+        event = a0  # Reassign for readability
+        if event and self.file_ops.prompt_save_before_close(self.settings_panel.get_state_dict):
             event.accept()
         else:
-            event.ignore()
+            if event:
+                event.ignore()

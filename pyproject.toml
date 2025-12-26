@@ -30,3 +30,19 @@ packages = ["src"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "resources" = "share/google-earth-tile-generator/resources"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ty>=0.0.7",
+]
+
+[tool.ty]
+# Type checking configuration
+
+[tool.ty.environment]
+python-version = "3.11"  # Minimum supported version from requires-python
+
+[tool.ty.src]
+# Respect .gitignore and similar files for exclusions
+respect-ignore-files = true

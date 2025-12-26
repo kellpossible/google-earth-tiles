@@ -666,13 +666,17 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                 # Request was already deleted
                 pass
 
-    def requestStarted(self, request: QWebEngineUrlRequestJob):
+    def requestStarted(self, a0: Optional[QWebEngineUrlRequestJob]) -> None:
         """
         Handle URL request - returns immediately, work happens in background.
 
         Args:
-            request: The URL request
+            a0: The URL request
         """
+        request = a0  # Reassign for readability
+        if not request:
+            return
+
         url = request.requestUrl().toString()
 
         try:

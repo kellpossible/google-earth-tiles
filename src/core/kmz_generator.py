@@ -6,12 +6,13 @@ import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import simplekml
 
 from src.core.config import LayerConfig
 from src.core.tile_calculator import TileCalculator
+from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
 from src.gui.tile_compositor import TileCompositor
 
@@ -106,7 +107,7 @@ class KMZGenerator:
 
     async def _fetch_separate_layer_tiles(
         self,
-        extent: 'Extent',
+        extent: Extent,
         min_zoom: int,
         max_zoom: int,
         layer_composition: LayerComposition,
@@ -177,7 +178,7 @@ class KMZGenerator:
         layer_name: str,
         tiles_by_zoom: Dict[int, List[Tuple[Path, int, int, int]]],
         opacity: int,
-        lod_config: dict = None
+        lod_config: Optional[dict] = None
     ):
         """
         Add a separate layer's tiles to KML with its own folder and KML-level opacity.
@@ -254,7 +255,7 @@ class KMZGenerator:
 
     async def create_kmz_async(
         self,
-        extent: 'Extent',
+        extent: Extent,
         min_zoom: int,
         max_zoom: int,
         layer_compositions: List[LayerComposition]
@@ -438,7 +439,7 @@ class KMZGenerator:
 
     def create_kmz(
         self,
-        extent: 'Extent',
+        extent: Extent,
         min_zoom: int,
         max_zoom: int,
         layer_compositions: List[LayerComposition]
@@ -470,7 +471,7 @@ class KMZGenerator:
         self,
         tiles: List[Tuple[Path, int, int, int]],
         zoom: int,
-        lod_config: dict = None,
+        lod_config: Optional[dict] = None,
         parent_folder=None
     ):
         """

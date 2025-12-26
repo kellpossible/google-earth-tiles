@@ -1059,6 +1059,10 @@ class SettingsPanel(QWidget):
 
     def _on_generate_clicked(self):
         """Handle generate button click."""
+        # Validate extent is set (button should be disabled if not, but check anyway)
+        if self.current_extent is None:
+            return
+
         layer_compositions = self.get_layer_compositions()
         min_zoom, max_zoom = self.zoom_range_widget.value()
         output_path = self.output_path_edit.text()
@@ -1069,7 +1073,7 @@ class SettingsPanel(QWidget):
             min_zoom=min_zoom,
             max_zoom=max_zoom,
             extent=self.current_extent,
-            output_path=output_path
+            output_path=Path(output_path)
         )
 
         self.generate_requested.emit(request)

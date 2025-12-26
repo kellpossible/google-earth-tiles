@@ -1,7 +1,10 @@
 """Custom zoom range selection widget."""
 
+from typing import Optional
+
+from PyQt6 import QtGui
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPoint
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QMouseEvent
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from PyQt6.QtWidgets import QWidget
 
 
@@ -90,8 +93,9 @@ class ZoomRangeWidget(QWidget):
         # Clamp to valid range
         return max(self._min_zoom, min(self._max_zoom, zoom))
 
-    def paintEvent(self, event):
+    def paintEvent(self, a0: Optional[QtGui.QPaintEvent]) -> None:
         """Paint the widget."""
+        event = a0  # Reassign for readability
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -183,7 +187,7 @@ class ZoomRangeWidget(QWidget):
 
         painter.drawPolygon(*points)
 
-    def _get_handle_at_pos(self, pos: QPoint) -> str:
+    def _get_handle_at_pos(self, pos: QPoint) -> Optional[str]:
         """Determine which handle (if any) is at the given position."""
         handle_y = 10 + self._zone_height // 2
 
@@ -199,16 +203,18 @@ class ZoomRangeWidget(QWidget):
 
         return None
 
-    def mousePressEvent(self, event: QMouseEvent):
+    def mousePressEvent(self, a0: Optional[QtGui.QMouseEvent]) -> None:
         """Handle mouse press."""
-        if event.button() == Qt.MouseButton.LeftButton:
+        event = a0  # Reassign for readability
+        if event and event.button() == Qt.MouseButton.LeftButton:
             self._dragging_handle = self._get_handle_at_pos(event.pos())
             if self._dragging_handle:
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
-    def mouseMoveEvent(self, event: QMouseEvent):
+    def mouseMoveEvent(self, a0: Optional[QtGui.QMouseEvent]) -> None:
         """Handle mouse move."""
-        if self._dragging_handle:
+        event = a0  # Reassign for readability
+        if event and self._dragging_handle:
             new_zoom = self._x_to_zoom(event.pos().x())
 
             if self._dragging_handle == 'min':
@@ -226,16 +232,17 @@ class ZoomRangeWidget(QWidget):
                     self._selected_max = new_max
                     self.update()
                     self.valueChanged.emit((self._selected_min, self._selected_max))
-        else:
+        elif event:
             # Update cursor based on hover
             if self._get_handle_at_pos(event.pos()):
                 self.setCursor(Qt.CursorShape.OpenHandCursor)
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
 
-    def mouseReleaseEvent(self, event: QMouseEvent):
+    def mouseReleaseEvent(self, a0: Optional[QtGui.QMouseEvent]) -> None:
         """Handle mouse release."""
-        if event.button() == Qt.MouseButton.LeftButton:
+        event = a0  # Reassign for readability
+        if event and event.button() == Qt.MouseButton.LeftButton:
             self._dragging_handle = None
 
             # Update cursor based on position
