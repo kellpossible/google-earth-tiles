@@ -86,6 +86,8 @@ def validate_config(config: Dict) -> None:
                 raise ValueError(f"Opacity must be between 0 and 100, got {layer['opacity']}")
             if 'blend_mode' in layer and layer['blend_mode'] not in ['normal', 'multiply', 'screen', 'overlay']:
                 raise ValueError(f"Invalid blend_mode: {layer['blend_mode']}")
+            if 'export_mode' in layer and layer['export_mode'] not in ['composite', 'separate']:
+                raise ValueError(f"Invalid export_mode: {layer['export_mode']}. Must be 'composite' or 'separate'")
 
             # Validate LOD configuration
             if 'lod_mode' in layer:

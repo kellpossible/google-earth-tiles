@@ -13,6 +13,7 @@ class LayerComposition:
     layer_config: LayerConfig
     opacity: int  # 0-100
     blend_mode: str  # 'normal', 'multiply', 'screen', 'overlay'
+    export_mode: str = "composite"  # 'composite' or 'separate'
     lod_mode: str = "all_zooms"  # 'all_zooms' or 'select_zooms'
     selected_zooms: Set[int] = field(default_factory=set)  # Used when lod_mode = "select_zooms"
     enabled: bool = True  # Whether this layer is active in the composition
@@ -25,6 +26,10 @@ class LayerComposition:
         valid_modes = {'normal', 'multiply', 'screen', 'overlay'}
         if self.blend_mode not in valid_modes:
             raise ValueError(f"Blend mode must be one of {valid_modes}, got {self.blend_mode}")
+
+        valid_export_modes = {'composite', 'separate'}
+        if self.export_mode not in valid_export_modes:
+            raise ValueError(f"Export mode must be one of {valid_export_modes}, got {self.export_mode}")
 
         valid_lod_modes = {'all_zooms', 'select_zooms'}
         if self.lod_mode not in valid_lod_modes:
@@ -108,13 +113,17 @@ class LayerComposition:
         Convert composition to dictionary for YAML serialization.
 
         Returns:
-            Dictionary with name, opacity, blend_mode, and optional LOD/enabled keys
+            Dictionary with name, opacity, blend_mode, and optional export_mode/LOD/enabled keys
         """
         result = {
             'name': self.layer_config.name,
             'opacity': self.opacity,
             'blend_mode': self.blend_mode,
         }
+
+        # Only include export_mode if not default
+        if self.export_mode != "composite":
+            result['export_mode'] = self.export_mode
 
         # Only include enabled if False (not default)
         if not self.enabled:
@@ -151,6 +160,7 @@ class LayerComposition:
             layer_name = data
             opacity = 100
             blend_mode = 'normal'
+            export_mode = 'composite'
             lod_mode = 'all_zooms'
             selected_zooms = set()
             enabled = True
@@ -158,6 +168,7 @@ class LayerComposition:
             layer_name = data['name']
             opacity = data.get('opacity', 100)
             blend_mode = data.get('blend_mode', 'normal')
+            export_mode = data.get('export_mode', 'composite')
             lod_mode = data.get('lod_mode', 'all_zooms')
             selected_zooms = set(data.get('selected_zooms', []))
             enabled = data.get('enabled', True)
@@ -169,6 +180,7 @@ class LayerComposition:
             layer_config=LAYERS[layer_name],
             opacity=opacity,
             blend_mode=blend_mode,
+            export_mode=export_mode,
             lod_mode=lod_mode,
             selected_zooms=selected_zooms,
             enabled=enabled

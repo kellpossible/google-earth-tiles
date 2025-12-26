@@ -159,6 +159,25 @@ class LayerItemWidget(QFrame):
 
         layout.addLayout(blend_layout)
 
+        # Export mode dropdown
+        export_layout = QHBoxLayout()
+        export_layout.setContentsMargins(20, 0, 0, 0)  # Indent
+
+        self.export_label = QLabel("Export:")
+        export_layout.addWidget(self.export_label)
+
+        self.export_combo = QComboBox()
+        self.export_combo.addItem("Composite with others", "composite")
+        self.export_combo.addItem("Export separately", "separate")
+        # Set initial value from composition
+        export_index = self.export_combo.findData(self.composition.export_mode)
+        if export_index >= 0:
+            self.export_combo.setCurrentIndex(export_index)
+        self.export_combo.currentIndexChanged.connect(self._on_export_mode_changed)
+        export_layout.addWidget(self.export_combo, 1)
+
+        layout.addLayout(export_layout)
+
         # LOD mode dropdown
         lod_layout = QHBoxLayout()
         lod_layout.setContentsMargins(20, 0, 0, 0)  # Indent
@@ -233,6 +252,11 @@ class LayerItemWidget(QFrame):
 
         self.changed.emit()
 
+    def _on_export_mode_changed(self, index):
+        """Handle export mode dropdown change."""
+        self.composition.export_mode = self.export_combo.currentData()
+        self.changed.emit()
+
     def _on_enabled_changed(self, state):
         """Handle enabled checkbox state change."""
         # Use isChecked() to reliably get the checkbox state
@@ -254,6 +278,8 @@ class LayerItemWidget(QFrame):
         self.opacity_spinbox.setEnabled(enabled)
         self.blend_label.setEnabled(enabled)
         self.blend_combo.setEnabled(enabled)
+        self.export_label.setEnabled(enabled)
+        self.export_combo.setEnabled(enabled)
         self.up_button.setEnabled(enabled)
         self.down_button.setEnabled(enabled)
         self.lod_label.setEnabled(enabled)
@@ -262,6 +288,25 @@ class LayerItemWidget(QFrame):
 
         # Checkbox always stays enabled so user can re-enable the layer
         self.enabled_checkbox.setEnabled(True)
+
+    def _update_multi_layer_controls(self, total_enabled_layers: int):
+        """
+        Enable/disable blend mode and export mode based on layer count.
+
+        When only one layer is enabled, disable blend and export controls since
+        a single layer is always treated as separate with KML-level opacity.
+
+        Args:
+            total_enabled_layers: Total number of enabled layers in the composition
+        """
+        # When only one layer is enabled, disable blend and export controls
+        # (single layer is always treated as separate with KML-level opacity)
+        multi_layer_mode = total_enabled_layers > 1
+
+        self.blend_label.setEnabled(multi_layer_mode and self.composition.enabled)
+        self.blend_combo.setEnabled(multi_layer_mode and self.composition.enabled)
+        self.export_label.setEnabled(multi_layer_mode and self.composition.enabled)
+        self.export_combo.setEnabled(multi_layer_mode and self.composition.enabled)
 
     def set_output_zoom_range(self, min_zoom: int, max_zoom: int):
         """Update available zoom range from main settings.
@@ -357,6 +402,7 @@ class LayerItemWidget(QFrame):
         # Update composition with current UI values
         self.composition.opacity = self.opacity_spinbox.value()
         self.composition.blend_mode = self.blend_combo.currentData()
+        self.composition.export_mode = self.export_combo.currentData()
         return self.composition
 
 
@@ -703,8 +749,9 @@ class SettingsPanel(QWidget):
         self._emit_state_changed()
 
     def _on_layer_settings_changed(self):
-        """Handle layer settings change (opacity/blend) - no zoom limit update needed."""
+        """Handle layer settings change (opacity/blend/enabled) - no zoom limit update needed."""
         self._update_estimates()
+        self._update_all_layer_multi_mode()  # Update blend/export controls based on enabled layer count
         self.settings_changed_no_zoom.emit()
 
     def _move_layer_up(self, widget: LayerItemWidget):
@@ -745,6 +792,23 @@ class SettingsPanel(QWidget):
             widget.up_button.setEnabled(i > 0)
             widget.down_button.setEnabled(i < len(self.layer_widgets) - 1)
 
+    def _update_all_layer_multi_mode(self):
+        """
+        Update multi-layer controls for all layer widgets.
+
+        Counts enabled layers and updates blend/export mode controls accordingly.
+        When only one layer is enabled, blend and export modes are disabled.
+        """
+        # Count enabled layers
+        enabled_count = 0
+        for widget in self.layer_widgets:
+            if widget.composition.enabled:
+                enabled_count += 1
+
+        # Update all widgets
+        for widget in self.layer_widgets:
+            widget._update_multi_layer_controls(enabled_count)
+
     def _on_add_layer_clicked(self):
         """Handle Add Layer button click."""
         # Get list of layers not currently added
@@ -776,6 +840,7 @@ class SettingsPanel(QWidget):
             layer_config=layer_config,
             opacity=100,
             blend_mode='normal',
+            export_mode='composite',
             lod_mode='all_zooms',
             selected_zooms=set(),
             enabled=True
@@ -801,6 +866,7 @@ class SettingsPanel(QWidget):
 
         # Update UI state
         self._update_move_buttons()
+        self._update_all_layer_multi_mode()
         self._on_layer_changed()
         self.changed.emit()
 
@@ -820,6 +886,7 @@ class SettingsPanel(QWidget):
 
         # Update UI state
         self._update_move_buttons()
+        self._update_all_layer_multi_mode()
         self._on_layer_changed()
         self.changed.emit()
 

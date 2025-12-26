@@ -19,4 +19,5 @@ layers:
   - 16
 - name: slopezone1map
   opacity: 52
-  blend_mode: multiply
+  blend_mode: normal
+  export_mode: separate
