@@ -1,6 +1,18 @@
 """Tile calculation and coordinate conversion utilities."""
 
+import logging
 import math
+
+logger = logging.getLogger(__name__)
+
+# Web compatible mode configuration
+# Chunks are NxN grids of 256x256 pixel tiles merged into larger images
+# CHUNK_SIZE = 2 creates 512x512 pixel chunks (2 tiles × 256px = 512px)
+# Smaller chunks allow for more granular loading and better compatibility with Google Earth Web
+CHUNK_SIZE = 2  # Number of tiles per chunk dimension (2x2 = 512x512 pixels)
+
+# Google Earth Web limits
+WEB_COMPATIBLE_MAX_TOTAL_CHUNKS = 28  # Total chunks across all layers (conservative limit for reliability)
 
 
 class TileCalculator:
@@ -146,13 +158,13 @@ class TileCalculator:
 
     @staticmethod
     def calculate_chunks_at_zoom(
-        min_lon: float, min_lat: float, max_lon: float, max_lat: float, zoom: int, chunk_size: int = 8
+        min_lon: float, min_lat: float, max_lon: float, max_lat: float, zoom: int, chunk_size: int = CHUNK_SIZE
     ) -> int:
         """
         Calculate number of chunks needed for extent at zoom level.
 
         A chunk represents an NxN grid of 256x256 tiles merged into a single image.
-        Default chunk_size=8 creates 2048x2048 pixel images (8*256=2048).
+        Default chunk_size=2 creates 512x512 pixel images (2*256=512).
 
         Args:
             min_lon: Minimum longitude
@@ -191,24 +203,23 @@ class TileCalculator:
         max_lon: float,
         max_lat: float,
         layer_count: int,
-        max_chunks_per_layer: int = 500,
-        chunk_size: int = 8,
+        max_total_chunks: int = WEB_COMPATIBLE_MAX_TOTAL_CHUNKS,
+        chunk_size: int = CHUNK_SIZE,
     ) -> int:
         """
         Find largest zoom level that stays under chunk limit for web compatibility.
 
-        Google Earth Web has a limit of ~10,000 features per import. We use a
-        conservative limit of 500 chunks per layer to stay well under this limit
-        while accounting for multiple layers and KML overhead.
+        Google Earth Web has a limit of ~10,000 features per import. This method
+        ensures the total chunks across all layers stays well under this limit.
 
         Args:
             min_lon: Minimum longitude
             min_lat: Minimum latitude
             max_lon: Maximum longitude
             max_lat: Maximum latitude
-            layer_count: Number of enabled layers (including separate layers)
-            max_chunks_per_layer: Maximum chunks allowed per layer (default 500)
-            chunk_size: Number of tiles per chunk (default 8)
+            layer_count: Number of effective layers (1 for composited + count of separate layers)
+            max_total_chunks: Maximum total chunks across all layers (default 48)
+            chunk_size: Number of tiles per chunk dimension (default 2 for 512x512 pixels)
 
         Returns:
             Maximum zoom level that fits within limits (minimum 2)
@@ -219,15 +230,31 @@ class TileCalculator:
                 min_lon, min_lat, max_lon, max_lat, zoom, chunk_size
             )
 
-            # Check if this zoom level fits under the per-layer limit
-            if chunks_needed <= max_chunks_per_layer:
+            # Calculate total chunks across all layers
+            total_chunks = chunks_needed * layer_count
+
+            # Check if this zoom level fits under the total limit
+            if total_chunks <= max_total_chunks:
+                logger.debug(
+                    f"Zoom {zoom}: {chunks_needed} chunks/layer × {layer_count} layers "
+                    f"= {total_chunks} total chunks (within limit of {max_total_chunks})"
+                )
                 return zoom
+            else:
+                logger.debug(
+                    f"Zoom {zoom}: {chunks_needed} chunks/layer × {layer_count} layers "
+                    f"= {total_chunks} total chunks (exceeds limit of {max_total_chunks})"
+                )
 
         # If nothing fits, return minimum
+        logger.warning(
+            f"No zoom level fits within limit of {max_total_chunks} total chunks for {layer_count} layer(s). "
+            f"Using minimum zoom 2."
+        )
         return 2
 
     @staticmethod
-    def get_chunk_grid(tiles: list[tuple[int, int]], zoom: int, chunk_size: int = 8) -> list[dict]:
+    def get_chunk_grid(tiles: list[tuple[int, int]], zoom: int, chunk_size: int = CHUNK_SIZE) -> list[dict]:
         """
         Group tiles into NxN chunks and calculate their geographic bounds.
 

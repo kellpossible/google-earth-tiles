@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.config import CATEGORIES, DEFAULT_ZOOM, LAYERS, LayerConfig
-from src.core.tile_calculator import TileCalculator
+from src.core.tile_calculator import CHUNK_SIZE, TileCalculator
 from src.gui.zoom_range_widget import ZoomRangeWidget
 from src.models.extent import Extent
 from src.models.generation_request import GenerationRequest
@@ -910,6 +910,10 @@ class SettingsPanel(QWidget):
 
     def _on_zoom_range_changed(self, value):
         """Handle zoom range slider change."""
+        # Don't modify values during config loading
+        if self._suppress_state_changes:
+            return
+
         min_zoom, max_zoom = value
 
         # Web compatible mode requires single zoom level
@@ -933,7 +937,6 @@ class SettingsPanel(QWidget):
                         self.current_extent.max_lon,
                         self.current_extent.max_lat,
                         effective_layer_count,
-                        max_chunks_per_layer=500,
                     )
 
                     # If user tries to go above calculated max, clamp it
@@ -987,6 +990,10 @@ class SettingsPanel(QWidget):
 
     def _on_web_compatible_changed(self, state):
         """Handle web compatible mode checkbox change."""
+        # Don't show warnings or modify values during config loading
+        if self._suppress_state_changes:
+            return
+
         is_checked = self.web_compatible_checkbox.isChecked()
 
         if is_checked and self.current_extent:
@@ -1005,7 +1012,6 @@ class SettingsPanel(QWidget):
                     self.current_extent.max_lon,
                     self.current_extent.max_lat,
                     effective_layer_count,
-                    max_chunks_per_layer=500,
                 )
 
                 # Get user's current zoom range
@@ -1034,12 +1040,9 @@ class SettingsPanel(QWidget):
                         "Web Compatible Mode",
                         f"WARNING: Calculated maximum zoom ({calculated_max_zoom}) is lower than "
                         f"your specified max zoom ({user_max_zoom}).\n\n"
-                        f"Using zoom {calculated_max_zoom} to stay within Google Earth Web's image limits.\n"
-                        f"You can adjust the zoom level using the slider.",
+                        f"The KMZ will be generated at zoom {calculated_max_zoom} to stay within Google Earth Web's image limits.\n"
+                        f"Your zoom settings have not been changed - you can adjust them if needed.",
                     )
-
-                # Set to single zoom at target level (user can still adjust with slider)
-                self.zoom_range_widget.set_value(target_zoom, target_zoom)
 
         # Update estimates to reflect web compatible mode
         self._update_estimates()
@@ -1152,13 +1155,13 @@ class SettingsPanel(QWidget):
                 self.current_extent.max_lon,
                 self.current_extent.max_lat,
                 max_zoom,
-                chunk_size=8,
+                chunk_size=CHUNK_SIZE,
             )
 
-            # Estimate size: 2048x2048 chunks are ~64x larger than 256x256 tiles
-            # But we have fewer of them (1 chunk = 64 tiles)
-            # Rough estimate: chunk file ~400KB for PNG (2048x2048 with compression)
-            avg_chunk_size_kb = 400
+            # Estimate size based on chunk size
+            # CHUNK_SIZE=4 means 4x4=16 tiles per chunk, CHUNK_SIZE=8 means 8x8=64 tiles per chunk
+            # Empirically: ~6KB per tile after compression when merged into chunks
+            avg_chunk_size_kb = (CHUNK_SIZE ** 2) * 6
             total_size_mb = (chunk_count * effective_layer_count * avg_chunk_size_kb) / 1024
 
             self.tile_count_label.setText(f"Chunks: {chunk_count:,} ({chunk_count * effective_layer_count:,} total)")

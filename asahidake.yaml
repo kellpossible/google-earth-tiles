@@ -1,11 +1,10 @@
 extent:
   min_lon: 142.78347015380862
-  min_lat: 43.620667696758616
-  max_lon: 142.97092437744143
-  max_lat: 43.73315055548809
+  min_lat: 43.63955371305865
+  max_lon: 142.88269042968753
+  max_lat: 43.682522120039025
 min_zoom: 12
 max_zoom: 16
-web_compatible: true
 output: /Users/luke/programming/google-earth-tile-generator/asahidake.kmz
 layers:
 - name: std

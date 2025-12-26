@@ -1,7 +1,7 @@
 """Tests for core functionality."""
 
 from src.core.config import LAYERS
-from src.core.tile_calculator import TileCalculator
+from src.core.tile_calculator import CHUNK_SIZE, WEB_COMPATIBLE_MAX_TOTAL_CHUNKS, TileCalculator
 from src.models.extent import Extent
 
 
@@ -105,16 +105,16 @@ def test_download_size_estimation():
 def test_calculate_chunks_at_zoom():
     """Test chunk calculation at specific zoom level."""
     # Small extent (0.1° x 0.1°) at zoom 12 should produce few chunks
-    chunks = TileCalculator.calculate_chunks_at_zoom(139.69, 35.67, 139.79, 35.77, 12, chunk_size=8)
+    chunks = TileCalculator.calculate_chunks_at_zoom(139.69, 35.67, 139.79, 35.77, 12, chunk_size=CHUNK_SIZE)
     assert chunks > 0
     assert isinstance(chunks, int)
 
     # Larger extent should produce more chunks
-    large_chunks = TileCalculator.calculate_chunks_at_zoom(139.0, 35.0, 140.0, 36.0, 12, chunk_size=8)
+    large_chunks = TileCalculator.calculate_chunks_at_zoom(139.0, 35.0, 140.0, 36.0, 12, chunk_size=CHUNK_SIZE)
     assert large_chunks > chunks
 
     # Higher zoom should produce more chunks for same extent (use zoom 16 for significant difference)
-    high_zoom_chunks = TileCalculator.calculate_chunks_at_zoom(139.69, 35.67, 139.79, 35.77, 16, chunk_size=8)
+    high_zoom_chunks = TileCalculator.calculate_chunks_at_zoom(139.69, 35.67, 139.79, 35.77, 16, chunk_size=CHUNK_SIZE)
     assert high_zoom_chunks > chunks
 
 
@@ -122,20 +122,20 @@ def test_find_max_web_compatible_zoom():
     """Test finding maximum web-compatible zoom level."""
     # Small extent should support high zoom
     small_extent_zoom = TileCalculator.find_max_web_compatible_zoom(
-        139.69, 35.67, 139.71, 35.69, layer_count=2, max_chunks_per_layer=500
+        139.69, 35.67, 139.71, 35.69, layer_count=2
     )
     assert small_extent_zoom >= 14
     assert small_extent_zoom <= 18
 
     # Large extent should force lower zoom
     large_extent_zoom = TileCalculator.find_max_web_compatible_zoom(
-        139.0, 35.0, 140.0, 36.0, layer_count=2, max_chunks_per_layer=500
+        139.0, 35.0, 140.0, 36.0, layer_count=2
     )
     assert large_extent_zoom < small_extent_zoom
 
     # More layers should reduce maximum zoom (or keep it same if already at limit)
     more_layers_zoom = TileCalculator.find_max_web_compatible_zoom(
-        139.69, 35.67, 139.71, 35.69, layer_count=5, max_chunks_per_layer=500
+        139.69, 35.67, 139.71, 35.69, layer_count=5
     )
     assert more_layers_zoom <= small_extent_zoom
 
@@ -146,7 +146,7 @@ def test_get_chunk_grid():
     tiles = TileCalculator.get_tiles_in_extent(139.69, 35.67, 139.71, 35.69, 12)
 
     # Generate chunk grid
-    chunks = TileCalculator.get_chunk_grid(tiles, 12, chunk_size=8)
+    chunks = TileCalculator.get_chunk_grid(tiles, 12, chunk_size=CHUNK_SIZE)
 
     assert len(chunks) > 0
     assert all(isinstance(chunk, dict) for chunk in chunks)
@@ -196,15 +196,47 @@ def test_web_compatible_zoom_calculation_realistic():
     # Asahidake extent (from config)
     asahidake_extent = (142.783, 43.621, 142.971, 43.733)
 
-    # Single layer should support zoom 16
-    zoom = TileCalculator.find_max_web_compatible_zoom(*asahidake_extent, layer_count=1, max_chunks_per_layer=500)
-    assert zoom >= 16, f"Asahidake with 1 layer should support zoom 16, got {zoom}"
+    # Single layer - calculate what it supports
+    zoom_1_layer = TileCalculator.find_max_web_compatible_zoom(*asahidake_extent, layer_count=1)
+    assert zoom_1_layer >= 12, f"Asahidake with 1 layer should support at least zoom 12, got {zoom_1_layer}"
 
-    # Two layers (composited + separate) should also support zoom 16
-    zoom = TileCalculator.find_max_web_compatible_zoom(*asahidake_extent, layer_count=2, max_chunks_per_layer=500)
-    assert zoom >= 16, f"Asahidake with 2 layers should support zoom 16, got {zoom}"
+    # Verify it's within the total chunk limit
+    chunks_1 = TileCalculator.calculate_chunks_at_zoom(*asahidake_extent, zoom_1_layer, chunk_size=CHUNK_SIZE)
+    assert chunks_1 <= WEB_COMPATIBLE_MAX_TOTAL_CHUNKS, f"Single layer chunks {chunks_1} exceeds limit {WEB_COMPATIBLE_MAX_TOTAL_CHUNKS}"
+
+    # Two layers (composited + separate) should support lower or equal zoom
+    zoom_2_layers = TileCalculator.find_max_web_compatible_zoom(*asahidake_extent, layer_count=2)
+    assert zoom_2_layers <= zoom_1_layer, "More layers should reduce or maintain zoom level"
+    assert zoom_2_layers >= 12, f"Asahidake with 2 layers should support at least zoom 12, got {zoom_2_layers}"
+
+    # Verify total chunks for 2 layers is within limit
+    chunks_2 = TileCalculator.calculate_chunks_at_zoom(*asahidake_extent, zoom_2_layers, chunk_size=CHUNK_SIZE)
+    total_chunks_2 = chunks_2 * 2
+    assert total_chunks_2 <= WEB_COMPATIBLE_MAX_TOTAL_CHUNKS, f"Two layers total chunks {total_chunks_2} exceeds limit {WEB_COMPATIBLE_MAX_TOTAL_CHUNKS}"
 
     # Very small extent (0.01° x 0.01°) should support maximum zoom
     tiny_extent = (139.700, 35.670, 139.710, 35.680)
-    zoom = TileCalculator.find_max_web_compatible_zoom(*tiny_extent, layer_count=1, max_chunks_per_layer=500)
+    zoom = TileCalculator.find_max_web_compatible_zoom(*tiny_extent, layer_count=1)
     assert zoom == 18, f"Tiny extent should support zoom 18, got {zoom}"
+
+
+def test_multi_layer_chunk_limit_enforcement():
+    """Test that layer_count is properly used in chunk limit calculation."""
+    # Use a moderate extent
+    extent = (142.78, 43.62, 142.97, 43.73)
+
+    # Test with increasing layer counts
+    zoom_1 = TileCalculator.find_max_web_compatible_zoom(*extent, layer_count=1)
+    zoom_2 = TileCalculator.find_max_web_compatible_zoom(*extent, layer_count=2)
+    zoom_3 = TileCalculator.find_max_web_compatible_zoom(*extent, layer_count=3)
+
+    # More layers should result in same or lower zoom
+    assert zoom_2 <= zoom_1
+    assert zoom_3 <= zoom_2
+
+    # Verify all stay within total chunk limit
+    for layer_count, zoom in [(1, zoom_1), (2, zoom_2), (3, zoom_3)]:
+        chunks = TileCalculator.calculate_chunks_at_zoom(*extent, zoom, chunk_size=CHUNK_SIZE)
+        total_chunks = chunks * layer_count
+        assert total_chunks <= WEB_COMPATIBLE_MAX_TOTAL_CHUNKS, \
+            f"{layer_count} layers with {chunks} chunks each = {total_chunks} total exceeds limit"

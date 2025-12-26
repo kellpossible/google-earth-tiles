@@ -10,7 +10,7 @@ from pathlib import Path
 import simplekml
 from PIL import Image
 
-from src.core.tile_calculator import TileCalculator
+from src.core.tile_calculator import CHUNK_SIZE, TileCalculator
 from src.gui.tile_compositor import TileCompositor
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
@@ -289,15 +289,19 @@ class KMZGenerator:
                 extent.max_lon,
                 extent.max_lat,
                 effective_layer_count,
-                max_chunks_per_layer=500,
+            )
+
+            logger.info(
+                f"Web compatible mode: Calculated max zoom {calculated_max_zoom} "
+                f"for {effective_layer_count} layer(s)"
             )
 
             # Determine actual zoom to use
             if calculated_max_zoom < min_zoom:
                 raise ValueError(
-                    f"Web compatible mode cannot support min_zoom={min_zoom}. "
-                    f"Maximum supportable zoom for this extent and layer count is {calculated_max_zoom}. "
-                    f"Please reduce min_zoom or decrease extent/layer count."
+                    f"Web compatible mode requires zoom <= {calculated_max_zoom} "
+                    f"for {effective_layer_count} layer(s) within the extent, "
+                    f"but min_zoom is {min_zoom}. Consider reducing min_zoom or the extent size."
                 )
 
             actual_zoom = min(max_zoom, calculated_max_zoom)
@@ -687,7 +691,7 @@ class KMZGenerator:
         return chunks
 
     def merge_tiles_to_chunk(
-        self, tiles: list[tuple[Path, int, int, int]], zoom: int, chunk_size: int = 8
+        self, tiles: list[tuple[Path, int, int, int]], zoom: int, chunk_size: int = CHUNK_SIZE
     ) -> Image.Image:
         """
         Merge 256x256 tiles into a single chunk image.
@@ -695,7 +699,7 @@ class KMZGenerator:
         Args:
             tiles: List of (tile_path, x, y, z) tuples
             zoom: Zoom level (for coordinate calculation)
-            chunk_size: Number of tiles per chunk dimension (default 8 for 2048x2048)
+            chunk_size: Number of tiles per chunk dimension (default 2 for 512x512)
 
         Returns:
             PIL Image of merged chunk (up to chunk_size*256 x chunk_size*256)
@@ -776,8 +780,8 @@ class KMZGenerator:
                 extent.min_lon, extent.min_lat, extent.max_lon, extent.max_lat, zoom
             )
 
-            # Calculate chunk grid (8x8 tiles per chunk = 2048x2048 pixels)
-            chunk_grid = TileCalculator.get_chunk_grid(tiles_at_zoom, zoom, chunk_size=8)
+            # Calculate chunk grid (2x2 tiles per chunk = 512x512 pixels)
+            chunk_grid = TileCalculator.get_chunk_grid(tiles_at_zoom, zoom, chunk_size=CHUNK_SIZE)
 
             logger.info(f"Web compatible mode: {len(chunk_grid)} chunks at zoom {zoom}")
 
