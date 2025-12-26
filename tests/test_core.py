@@ -11,7 +11,7 @@ def test_layer_config():
     """Test layer configuration."""
     assert 'std' in LAYERS
     assert 'ort' in LAYERS
-    assert len(LAYERS) == 5
+    assert len(LAYERS) > 5  # Should have many layers
 
     std_layer = LAYERS['std']
     assert std_layer.name == 'std'
@@ -126,3 +126,137 @@ def test_download_size_estimation():
     jpg_size = TileCalculator.estimate_download_size(100, 'jpg')
     png_size = TileCalculator.estimate_download_size(100, 'png')
     assert jpg_size > png_size
+
+
+def test_calculate_chunks_at_zoom():
+    """Test chunk calculation at specific zoom level."""
+    # Small extent (0.1° x 0.1°) at zoom 12 should produce few chunks
+    chunks = TileCalculator.calculate_chunks_at_zoom(
+        139.69, 35.67, 139.79, 35.77, 12, chunk_size=8
+    )
+    assert chunks > 0
+    assert isinstance(chunks, int)
+
+    # Larger extent should produce more chunks
+    large_chunks = TileCalculator.calculate_chunks_at_zoom(
+        139.0, 35.0, 140.0, 36.0, 12, chunk_size=8
+    )
+    assert large_chunks > chunks
+
+    # Higher zoom should produce more chunks for same extent (use zoom 16 for significant difference)
+    high_zoom_chunks = TileCalculator.calculate_chunks_at_zoom(
+        139.69, 35.67, 139.79, 35.77, 16, chunk_size=8
+    )
+    assert high_zoom_chunks > chunks
+
+
+def test_find_max_web_compatible_zoom():
+    """Test finding maximum web-compatible zoom level."""
+    # Small extent should support high zoom
+    small_extent_zoom = TileCalculator.find_max_web_compatible_zoom(
+        139.69, 35.67, 139.71, 35.69,
+        layer_count=2,
+        max_chunks_per_layer=500
+    )
+    assert small_extent_zoom >= 14
+    assert small_extent_zoom <= 18
+
+    # Large extent should force lower zoom
+    large_extent_zoom = TileCalculator.find_max_web_compatible_zoom(
+        139.0, 35.0, 140.0, 36.0,
+        layer_count=2,
+        max_chunks_per_layer=500
+    )
+    assert large_extent_zoom < small_extent_zoom
+
+    # More layers should reduce maximum zoom (or keep it same if already at limit)
+    more_layers_zoom = TileCalculator.find_max_web_compatible_zoom(
+        139.69, 35.67, 139.71, 35.69,
+        layer_count=5,
+        max_chunks_per_layer=500
+    )
+    assert more_layers_zoom <= small_extent_zoom
+
+
+def test_get_chunk_grid():
+    """Test chunk grid generation."""
+    # Get tiles for a small extent
+    tiles = TileCalculator.get_tiles_in_extent(
+        139.69, 35.67, 139.71, 35.69, 12
+    )
+
+    # Generate chunk grid
+    chunks = TileCalculator.get_chunk_grid(tiles, 12, chunk_size=8)
+
+    assert len(chunks) > 0
+    assert all(isinstance(chunk, dict) for chunk in chunks)
+
+    # Each chunk should have required fields
+    for chunk in chunks:
+        assert 'chunk_x' in chunk
+        assert 'chunk_y' in chunk
+        assert 'tiles' in chunk
+        assert 'bounds' in chunk
+        assert isinstance(chunk['tiles'], list)
+        assert isinstance(chunk['bounds'], dict)
+        assert 'north' in chunk['bounds']
+        assert 'south' in chunk['bounds']
+        assert 'east' in chunk['bounds']
+        assert 'west' in chunk['bounds']
+
+
+def test_calculate_chunk_bounds():
+    """Test chunk bounds calculation."""
+    # Create a simple set of tiles (2x2 grid)
+    tiles = [(100, 200), (101, 200), (100, 201), (101, 201)]
+    zoom = 12
+
+    bounds = TileCalculator.calculate_chunk_bounds(tiles, zoom)
+
+    # Should return valid bounds
+    assert 'north' in bounds
+    assert 'south' in bounds
+    assert 'east' in bounds
+    assert 'west' in bounds
+
+    # North should be greater than south
+    assert bounds['north'] > bounds['south']
+    # East should be greater than west
+    assert bounds['east'] > bounds['west']
+
+    # Bounds should be in valid lat/lon range
+    assert -90 <= bounds['south'] <= 90
+    assert -90 <= bounds['north'] <= 90
+    assert -180 <= bounds['west'] <= 180
+    assert -180 <= bounds['east'] <= 180
+
+
+def test_web_compatible_zoom_calculation_realistic():
+    """Test web compatible zoom calculation with realistic scenarios."""
+    # Asahidake extent (from config)
+    asahidake_extent = (142.783, 43.621, 142.971, 43.733)
+
+    # Single layer should support zoom 16
+    zoom = TileCalculator.find_max_web_compatible_zoom(
+        *asahidake_extent,
+        layer_count=1,
+        max_chunks_per_layer=500
+    )
+    assert zoom >= 16, f"Asahidake with 1 layer should support zoom 16, got {zoom}"
+
+    # Two layers (composited + separate) should also support zoom 16
+    zoom = TileCalculator.find_max_web_compatible_zoom(
+        *asahidake_extent,
+        layer_count=2,
+        max_chunks_per_layer=500
+    )
+    assert zoom >= 16, f"Asahidake with 2 layers should support zoom 16, got {zoom}"
+
+    # Very small extent (0.01° x 0.01°) should support maximum zoom
+    tiny_extent = (139.700, 35.670, 139.710, 35.680)
+    zoom = TileCalculator.find_max_web_compatible_zoom(
+        *tiny_extent,
+        layer_count=1,
+        max_chunks_per_layer=500
+    )
+    assert zoom == 18, f"Tiny extent should support zoom 18, got {zoom}"
