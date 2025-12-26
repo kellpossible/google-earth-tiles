@@ -1,7 +1,7 @@
 """Layer composition model."""
 
-from dataclasses import dataclass, replace, field
-from typing import Dict, Any, Union, Set
+from dataclasses import dataclass, field, replace
+from typing import Any
 
 from src.core.config import LayerConfig
 
@@ -15,7 +15,7 @@ class LayerComposition:
     blend_mode: str  # 'normal', 'multiply', 'screen', 'overlay'
     export_mode: str = "composite"  # 'composite' or 'separate'
     lod_mode: str = "all_zooms"  # 'all_zooms' or 'select_zooms'
-    selected_zooms: Set[int] = field(default_factory=set)  # Used when lod_mode = "select_zooms"
+    selected_zooms: set[int] = field(default_factory=set)  # Used when lod_mode = "select_zooms"
     enabled: bool = True  # Whether this layer is active in the composition
 
     def __post_init__(self):
@@ -23,19 +23,19 @@ class LayerComposition:
         if not 0 <= self.opacity <= 100:
             raise ValueError(f"Opacity must be between 0 and 100, got {self.opacity}")
 
-        valid_modes = {'normal', 'multiply', 'screen', 'overlay'}
+        valid_modes = {"normal", "multiply", "screen", "overlay"}
         if self.blend_mode not in valid_modes:
             raise ValueError(f"Blend mode must be one of {valid_modes}, got {self.blend_mode}")
 
-        valid_export_modes = {'composite', 'separate'}
+        valid_export_modes = {"composite", "separate"}
         if self.export_mode not in valid_export_modes:
             raise ValueError(f"Export mode must be one of {valid_export_modes}, got {self.export_mode}")
 
-        valid_lod_modes = {'all_zooms', 'select_zooms'}
+        valid_lod_modes = {"all_zooms", "select_zooms"}
         if self.lod_mode not in valid_lod_modes:
             raise ValueError(f"LOD mode must be one of {valid_lod_modes}, got {self.lod_mode}")
 
-    def get_available_zooms(self) -> Set[int]:
+    def get_available_zooms(self) -> set[int]:
         """
         Get zoom levels available for this layer.
 
@@ -74,19 +74,13 @@ class LayerComposition:
         """
         if self.lod_mode == "all_zooms":
             # Use all zooms within layer's native capability range
-            return set(range(
-                self.layer_config.min_zoom,
-                self.layer_config.max_zoom + 1
-            ))
+            return set(range(self.layer_config.min_zoom, self.layer_config.max_zoom + 1))
         else:
             # Use only selected zooms, filtered to layer's native capability
             # No output range restriction - allow resampling to any target zoom
-            return {
-                z for z in self.selected_zooms
-                if self.layer_config.min_zoom <= z <= self.layer_config.max_zoom
-            }
+            return {z for z in self.selected_zooms if self.layer_config.min_zoom <= z <= self.layer_config.max_zoom}
 
-    def find_best_source_zoom(self, target_zoom: int, available_zooms: Set[int]) -> int:
+    def find_best_source_zoom(self, target_zoom: int, available_zooms: set[int]) -> int:
         """
         Find the best available zoom level to use for a target zoom.
 
@@ -134,7 +128,7 @@ class LayerComposition:
             # Equidistant - prefer downsampling (higher zoom)
             return closest_higher
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Convert composition to dictionary for YAML serialization.
 
@@ -142,29 +136,29 @@ class LayerComposition:
             Dictionary with name, opacity, blend_mode, and optional export_mode/LOD/enabled keys
         """
         result = {
-            'name': self.layer_config.name,
-            'opacity': self.opacity,
-            'blend_mode': self.blend_mode,
+            "name": self.layer_config.name,
+            "opacity": self.opacity,
+            "blend_mode": self.blend_mode,
         }
 
         # Only include export_mode if not default
         if self.export_mode != "composite":
-            result['export_mode'] = self.export_mode
+            result["export_mode"] = self.export_mode
 
         # Only include enabled if False (not default)
         if not self.enabled:
-            result['enabled'] = False
+            result["enabled"] = False
 
         # Only include LOD config if not default
         if self.lod_mode != "all_zooms":
-            result['lod_mode'] = self.lod_mode
+            result["lod_mode"] = self.lod_mode
             if self.lod_mode == "select_zooms" and self.selected_zooms:
-                result['selected_zooms'] = sorted(list(self.selected_zooms))
+                result["selected_zooms"] = sorted(self.selected_zooms)
 
         return result
 
     @classmethod
-    def from_dict(cls, data: Union[str, Dict[str, Any]]) -> 'LayerComposition':
+    def from_dict(cls, data: str | dict[str, Any]) -> "LayerComposition":
         """
         Create composition from dictionary (loaded from YAML).
 
@@ -185,19 +179,19 @@ class LayerComposition:
         if isinstance(data, str):
             layer_name = data
             opacity = 100
-            blend_mode = 'normal'
-            export_mode = 'composite'
-            lod_mode = 'all_zooms'
+            blend_mode = "normal"
+            export_mode = "composite"
+            lod_mode = "all_zooms"
             selected_zooms = set()
             enabled = True
         else:
-            layer_name = data['name']
-            opacity = data.get('opacity', 100)
-            blend_mode = data.get('blend_mode', 'normal')
-            export_mode = data.get('export_mode', 'composite')
-            lod_mode = data.get('lod_mode', 'all_zooms')
-            selected_zooms = set(data.get('selected_zooms', []))
-            enabled = data.get('enabled', True)
+            layer_name = data["name"]
+            opacity = data.get("opacity", 100)
+            blend_mode = data.get("blend_mode", "normal")
+            export_mode = data.get("export_mode", "composite")
+            lod_mode = data.get("lod_mode", "all_zooms")
+            selected_zooms = set(data.get("selected_zooms", []))
+            enabled = data.get("enabled", True)
 
         if layer_name not in LAYERS:
             raise ValueError(f"Unknown layer: {layer_name}. Valid layers: {', '.join(LAYERS.keys())}")
@@ -209,10 +203,10 @@ class LayerComposition:
             export_mode=export_mode,
             lod_mode=lod_mode,
             selected_zooms=selected_zooms,
-            enabled=enabled
+            enabled=enabled,
         )
 
-    def copy(self) -> 'LayerComposition':
+    def copy(self) -> "LayerComposition":
         """
         Create a copy of this layer composition.
 

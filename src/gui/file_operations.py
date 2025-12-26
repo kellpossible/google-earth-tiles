@@ -1,8 +1,8 @@
 """File operations for saving and loading UI state."""
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import yaml
 from PyQt6.QtCore import QSettings
@@ -22,7 +22,7 @@ class FileOperations:
             parent: Parent widget for dialogs
         """
         self.parent = parent
-        self.current_file: Optional[Path] = None
+        self.current_file: Path | None = None
         self.is_dirty = False
         # Use default constructor to pick up organization/application from QApplication
         self.settings = QSettings()
@@ -42,11 +42,7 @@ class FileOperations:
         try:
             state = get_state_callback()
         except ValueError as e:
-            QMessageBox.critical(
-                self.parent,
-                "Cannot Save",
-                str(e)
-            )
+            QMessageBox.critical(self.parent, "Cannot Save", str(e))
             return False
 
         if self.current_file is None:
@@ -67,18 +63,14 @@ class FileOperations:
         try:
             state = get_state_callback()
         except ValueError as e:
-            QMessageBox.critical(
-                self.parent,
-                "Cannot Save",
-                str(e)
-            )
+            QMessageBox.critical(self.parent, "Cannot Save", str(e))
             return False
 
         file_path, _ = QFileDialog.getSaveFileName(
             self.parent,
             "Save Configuration",
             str(Path.home() / "config.yaml"),
-            "YAML Files (*.yaml *.yml);;All Files (*)"
+            "YAML Files (*.yaml *.yml);;All Files (*)",
         )
 
         if not file_path:
@@ -87,7 +79,7 @@ class FileOperations:
         # Ensure .yaml extension if no extension provided
         file_path = Path(file_path)
         if not file_path.suffix:
-            file_path = file_path.with_suffix('.yaml')
+            file_path = file_path.with_suffix(".yaml")
 
         return self._do_save(file_path, state)
 
@@ -103,7 +95,7 @@ class FileOperations:
             True if saved successfully, False otherwise
         """
         try:
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 yaml.dump(state, f, default_flow_style=False, sort_keys=False)
 
             self.current_file = file_path
@@ -114,11 +106,7 @@ class FileOperations:
 
         except Exception as e:
             logger.exception("Error saving file")
-            QMessageBox.critical(
-                self.parent,
-                "Save Error",
-                f"Failed to save file:\n{str(e)}"
-            )
+            QMessageBox.critical(self.parent, "Save Error", f"Failed to save file:\n{str(e)}")
             return False
 
     def open(self, load_state_callback: Callable, get_state_callback: Callable) -> bool:
@@ -137,16 +125,12 @@ class FileOperations:
             response = self._prompt_save_changes()
             if response == QMessageBox.StandardButton.Cancel:
                 return False
-            elif response == QMessageBox.StandardButton.Save:
+            elif response == QMessageBox.StandardButton.Save and not self.save(get_state_callback):
                 # Try to save first
-                if not self.save(get_state_callback):
-                    return False  # Save failed, cancel open
+                return False  # Save failed, cancel open
 
         file_path, _ = QFileDialog.getOpenFileName(
-            self.parent,
-            "Open Configuration",
-            str(Path.home()),
-            "YAML Files (*.yaml *.yml);;All Files (*)"
+            self.parent, "Open Configuration", str(Path.home()), "YAML Files (*.yaml *.yml);;All Files (*)"
         )
 
         if not file_path:
@@ -182,33 +166,17 @@ class FileOperations:
             return True
 
         except FileNotFoundError:
-            QMessageBox.critical(
-                self.parent,
-                "File Not Found",
-                f"File not found: {file_path}"
-            )
+            QMessageBox.critical(self.parent, "File Not Found", f"File not found: {file_path}")
             return False
         except yaml.YAMLError as e:
-            QMessageBox.critical(
-                self.parent,
-                "Invalid YAML",
-                f"Failed to parse YAML file:\n{str(e)}"
-            )
+            QMessageBox.critical(self.parent, "Invalid YAML", f"Failed to parse YAML file:\n{str(e)}")
             return False
         except ValueError as e:
-            QMessageBox.critical(
-                self.parent,
-                "Invalid Configuration",
-                f"Configuration validation failed:\n{str(e)}"
-            )
+            QMessageBox.critical(self.parent, "Invalid Configuration", f"Configuration validation failed:\n{str(e)}")
             return False
         except Exception as e:
             logger.exception("Error loading file")
-            QMessageBox.critical(
-                self.parent,
-                "Load Error",
-                f"Failed to load file:\n{str(e)}"
-            )
+            QMessageBox.critical(self.parent, "Load Error", f"Failed to load file:\n{str(e)}")
             return False
 
     def _prompt_save_changes(self) -> QMessageBox.StandardButton:
@@ -225,9 +193,7 @@ class FileOperations:
         msg.setWindowTitle("Unsaved Changes")
         msg.setText(f"Do you want to save changes to '{filename}'?")
         msg.setStandardButtons(
-            QMessageBox.StandardButton.Save |
-            QMessageBox.StandardButton.Discard |
-            QMessageBox.StandardButton.Cancel
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
         )
         msg.setDefaultButton(QMessageBox.StandardButton.Save)
 
@@ -251,10 +217,7 @@ class FileOperations:
 
         if response == QMessageBox.StandardButton.Save:
             return self.save(get_state_callback)
-        elif response == QMessageBox.StandardButton.Discard:
-            return True
-        else:  # Cancel
-            return False
+        return response == QMessageBox.StandardButton.Discard
 
     def mark_dirty(self):
         """Mark the file as having unsaved changes."""
@@ -280,7 +243,7 @@ class FileOperations:
         recent.insert(0, file_str)
 
         # Limit to max_recent_files
-        recent = recent[:self.max_recent_files]
+        recent = recent[: self.max_recent_files]
 
         # Save
         self.settings.setValue("recentFiles", recent)
@@ -300,12 +263,7 @@ class FileOperations:
         """Clear the recent files list."""
         self.settings.setValue("recentFiles", [])
 
-    def open_recent(
-        self,
-        file_path: Path,
-        load_state_callback: Callable,
-        get_state_callback: Callable
-    ) -> bool:
+    def open_recent(self, file_path: Path, load_state_callback: Callable, get_state_callback: Callable) -> bool:
         """
         Open a recent file with unsaved changes prompt.
 
@@ -319,11 +277,7 @@ class FileOperations:
         """
         # Check if file still exists
         if not file_path.exists():
-            QMessageBox.warning(
-                self.parent,
-                "File Not Found",
-                f"The file no longer exists:\n{file_path}"
-            )
+            QMessageBox.warning(self.parent, "File Not Found", f"The file no longer exists:\n{file_path}")
             # Remove from recent files
             recent = self.settings.value("recentFiles", [], type=list)
             file_str = str(file_path)
@@ -335,11 +289,10 @@ class FileOperations:
         # Prompt for unsaved changes
         if self.is_dirty:
             response = self._prompt_save_changes()
-            if response == QMessageBox.StandardButton.Cancel:
+            if response == QMessageBox.StandardButton.Cancel or (
+                response == QMessageBox.StandardButton.Save and not self.save(get_state_callback)
+            ):
                 return False
-            elif response == QMessageBox.StandardButton.Save:
-                if not self.save(get_state_callback):
-                    return False
 
         return self._do_open(file_path, load_state_callback)
 

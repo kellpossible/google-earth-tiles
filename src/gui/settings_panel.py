@@ -1,10 +1,9 @@
 """Settings panel for the application."""
 
 from pathlib import Path
-from typing import List, Optional
 
-from PyQt6.QtCore import pyqtSignal, Qt, QSize
-from PyQt6.QtGui import QPixmap, QIcon
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -28,20 +27,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core.config import DEFAULT_ZOOM, LAYERS, CATEGORIES, LayerConfig
+from src.core.config import CATEGORIES, DEFAULT_ZOOM, LAYERS, LayerConfig
 from src.core.tile_calculator import TileCalculator
 from src.gui.zoom_range_widget import ZoomRangeWidget
 from src.models.extent import Extent
 from src.models.generation_request import GenerationRequest
 from src.models.layer_composition import LayerComposition
 
-
 # Blend modes supported by KML (Google Earth)
 BLEND_MODES = [
-    ('Normal', 'normal'),
-    ('Multiply', 'multiply'),
-    ('Screen', 'screen'),
-    ('Overlay', 'overlay'),
+    ("Normal", "normal"),
+    ("Multiply", "multiply"),
+    ("Screen", "screen"),
+    ("Overlay", "overlay"),
 ]
 
 
@@ -207,6 +205,7 @@ class LayerItemWidget(QFrame):
 
         self.zoom_checkboxes_widget = QWidget()
         from PyQt6.QtWidgets import QGridLayout
+
         self.zoom_checkboxes_layout = QGridLayout(self.zoom_checkboxes_widget)
         self.zoom_checkboxes_layout.setSpacing(5)
         zoom_selection_layout.addWidget(self.zoom_checkboxes_widget)
@@ -342,12 +341,12 @@ class LayerItemWidget(QFrame):
             # Disable if outside layer's capability
             if zoom < self.composition.layer_config.min_zoom or zoom > self.composition.layer_config.max_zoom:
                 checkbox.setEnabled(False)
-                checkbox.setToolTip(f"Layer only supports zoom {self.composition.layer_config.min_zoom}-{self.composition.layer_config.max_zoom}")
+                checkbox.setToolTip(
+                    f"Layer only supports zoom {self.composition.layer_config.min_zoom}-{self.composition.layer_config.max_zoom}"
+                )
             else:
                 checkbox.setChecked(zoom in self.composition.selected_zooms)
-                checkbox.stateChanged.connect(
-                    lambda state, z=zoom: self._on_zoom_checkbox_changed(z, state)
-                )
+                checkbox.stateChanged.connect(lambda state, z=zoom: self._on_zoom_checkbox_changed(z, state))
 
             self.zoom_checkboxes[zoom] = checkbox
             self.zoom_checkboxes_layout.addWidget(checkbox, row, col)
@@ -427,8 +426,9 @@ class LayerListItemWidget(QWidget):
         preview_label = QLabel()
         if preview_path.exists():
             pixmap = QPixmap(str(preview_path))
-            scaled_pixmap = pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio,
-                                           Qt.TransformationMode.SmoothTransformation)
+            scaled_pixmap = pixmap.scaled(
+                80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
             preview_label.setPixmap(scaled_pixmap)
         preview_label.setFixedSize(80, 80)
         layout.addWidget(preview_label)
@@ -473,7 +473,7 @@ class LayerListItemWidget(QWidget):
 class AddLayerDialog(QDialog):
     """Dialog for selecting a layer to add."""
 
-    def __init__(self, available_layers: List[LayerConfig], parent=None):
+    def __init__(self, available_layers: list[LayerConfig], parent=None):
         """
         Initialize the add layer dialog.
 
@@ -483,7 +483,7 @@ class AddLayerDialog(QDialog):
         """
         super().__init__(parent)
         self.setWindowTitle("Add Layer")
-        self.selected_layer: Optional[LayerConfig] = None
+        self.selected_layer: LayerConfig | None = None
         self.all_available_layers = available_layers
 
         # Get preview images directory
@@ -520,9 +520,7 @@ class AddLayerDialog(QDialog):
         layout.addWidget(self.layer_list)
 
         # Dialog buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
@@ -530,7 +528,7 @@ class AddLayerDialog(QDialog):
         self.setLayout(layout)
         self.resize(500, 500)  # Larger size to accommodate preview images
 
-    def _populate_layer_list(self, layers: List[LayerConfig]):
+    def _populate_layer_list(self, layers: list[LayerConfig]):
         """Populate the layer list with given layers."""
         self.layer_list.clear()
 
@@ -573,7 +571,7 @@ class AddLayerDialog(QDialog):
             self.selected_layer = current_item.data(Qt.ItemDataRole.UserRole)
             super().accept()
 
-    def get_selected_layer(self) -> Optional[LayerConfig]:
+    def get_selected_layer(self) -> LayerConfig | None:
         """Get the selected layer config."""
         return self.selected_layer
 
@@ -591,9 +589,9 @@ class SettingsPanel(QWidget):
     def __init__(self):
         """Initialize settings panel."""
         super().__init__()
-        self.current_extent: Optional[Extent] = None
-        self.layer_widgets: List[LayerItemWidget] = []
-        self.current_preview_zoom: Optional[int] = None
+        self.current_extent: Extent | None = None
+        self.layer_widgets: list[LayerItemWidget] = []
+        self.current_preview_zoom: int | None = None
         self._suppress_state_changes = False
         self.init_ui()
 
@@ -750,7 +748,7 @@ class SettingsPanel(QWidget):
         self.setLayout(main_layout)
 
         # Start with standard layer by default
-        self.add_layer(LAYERS['std'])
+        self.add_layer(LAYERS["std"])
         self._update_zoom_range()
 
     def _on_layer_changed(self):
@@ -772,8 +770,10 @@ class SettingsPanel(QWidget):
         index = self.layer_widgets.index(widget)
         if index > 0:
             # Swap in list
-            self.layer_widgets[index], self.layer_widgets[index - 1] = \
-                self.layer_widgets[index - 1], self.layer_widgets[index]
+            self.layer_widgets[index], self.layer_widgets[index - 1] = (
+                self.layer_widgets[index - 1],
+                self.layer_widgets[index],
+            )
 
             # Swap in layout
             self.layers_container_layout.removeWidget(widget)
@@ -788,8 +788,10 @@ class SettingsPanel(QWidget):
         index = self.layer_widgets.index(widget)
         if index < len(self.layer_widgets) - 1:
             # Swap in list
-            self.layer_widgets[index], self.layer_widgets[index + 1] = \
-                self.layer_widgets[index + 1], self.layer_widgets[index]
+            self.layer_widgets[index], self.layer_widgets[index + 1] = (
+                self.layer_widgets[index + 1],
+                self.layer_widgets[index],
+            )
 
             # Swap in layout
             self.layers_container_layout.removeWidget(widget)
@@ -826,12 +828,10 @@ class SettingsPanel(QWidget):
         """Handle Add Layer button click."""
         # Get list of layers not currently added
         added_layer_names = {w.composition.layer_config.name for w in self.layer_widgets}
-        available_layers = [config for name, config in LAYERS.items()
-                           if name not in added_layer_names]
+        available_layers = [config for name, config in LAYERS.items() if name not in added_layer_names]
 
         if not available_layers:
-            QMessageBox.information(self, "No Layers Available",
-                                   "All available layers have already been added.")
+            QMessageBox.information(self, "No Layers Available", "All available layers have already been added.")
             return
 
         # Show dialog to select layer
@@ -852,11 +852,11 @@ class SettingsPanel(QWidget):
         composition = LayerComposition(
             layer_config=layer_config,
             opacity=100,
-            blend_mode='normal',
-            export_mode='composite',
-            lod_mode='all_zooms',
+            blend_mode="normal",
+            export_mode="composite",
+            lod_mode="all_zooms",
             selected_zooms=set(),
-            enabled=True
+            enabled=True,
         )
 
         # Create layer widget
@@ -928,7 +928,7 @@ class SettingsPanel(QWidget):
                         self.current_extent.max_lon,
                         self.current_extent.max_lat,
                         effective_layer_count,
-                        max_chunks_per_layer=500
+                        max_chunks_per_layer=500,
                     )
 
                     # If user tries to go above calculated max, clamp it
@@ -938,7 +938,7 @@ class SettingsPanel(QWidget):
                             self,
                             "Web Compatible Mode",
                             f"Maximum zoom for this extent is {calculated_max_zoom} to stay within "
-                            f"Google Earth Web's image limits (~500 chunks per layer)."
+                            f"Google Earth Web's image limits (~500 chunks per layer).",
                         )
                         return
 
@@ -1000,7 +1000,7 @@ class SettingsPanel(QWidget):
                     self.current_extent.max_lon,
                     self.current_extent.max_lat,
                     effective_layer_count,
-                    max_chunks_per_layer=500
+                    max_chunks_per_layer=500,
                 )
 
                 # Get user's current zoom range
@@ -1016,7 +1016,7 @@ class SettingsPanel(QWidget):
                         "Web Compatible Mode Error",
                         f"ERROR: Extent too large for web compatible mode.\n\n"
                         f"Calculated maximum zoom ({calculated_max_zoom}) is below your minimum zoom ({user_min_zoom}).\n\n"
-                        f"Please reduce the extent area or disable web compatible mode."
+                        f"Please reduce the extent area or disable web compatible mode.",
                     )
                     # Uncheck the checkbox
                     self.web_compatible_checkbox.setChecked(False)
@@ -1030,7 +1030,7 @@ class SettingsPanel(QWidget):
                         f"WARNING: Calculated maximum zoom ({calculated_max_zoom}) is lower than "
                         f"your specified max zoom ({user_max_zoom}).\n\n"
                         f"Using zoom {calculated_max_zoom} to stay within Google Earth Web's image limits.\n"
-                        f"You can adjust the zoom level using the slider."
+                        f"You can adjust the zoom level using the slider.",
                     )
 
                 # Set to single zoom at target level (user can still adjust with slider)
@@ -1054,7 +1054,7 @@ class SettingsPanel(QWidget):
         layer_max_zoom = max(layer.max_zoom for layer in enabled_layers)
 
         if layer_min_zoom > layer_max_zoom:
-            self.zoom_range_label.setText(f"<font color='red'>No compatible zoom range!</font>")
+            self.zoom_range_label.setText("<font color='red'>No compatible zoom range!</font>")
             self.zoom_range_widget.setEnabled(False)
         else:
             self.zoom_range_label.setText(f"{layer_min_zoom}-{layer_max_zoom}")
@@ -1066,10 +1066,7 @@ class SettingsPanel(QWidget):
     def _browse_output_path(self):
         """Open file dialog to select output path."""
         file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save KMZ File",
-            str(Path.home() / "tiles.kmz"),
-            "KMZ Files (*.kmz)"
+            self, "Save KMZ File", str(Path.home() / "tiles.kmz"), "KMZ Files (*.kmz)"
         )
 
         if file_path:
@@ -1150,7 +1147,7 @@ class SettingsPanel(QWidget):
                 self.current_extent.max_lon,
                 self.current_extent.max_lat,
                 max_zoom,
-                chunk_size=8
+                chunk_size=8,
             )
 
             # Estimate size: 2048x2048 chunks are ~64x larger than 256x256 tiles
@@ -1172,7 +1169,7 @@ class SettingsPanel(QWidget):
                     self.current_extent.min_lat,
                     self.current_extent.max_lon,
                     self.current_extent.max_lat,
-                    zoom
+                    zoom,
                 )
                 total_tiles += tile_count
 
@@ -1215,12 +1212,12 @@ class SettingsPanel(QWidget):
             max_zoom=max_zoom,
             extent=self.current_extent,
             output_path=Path(output_path),
-            web_compatible=web_compatible
+            web_compatible=web_compatible,
         )
 
         self.generate_requested.emit(request)
 
-    def get_enabled_layers(self) -> List[LayerConfig]:
+    def get_enabled_layers(self) -> list[LayerConfig]:
         """
         Get list of added layer configurations.
 
@@ -1229,7 +1226,7 @@ class SettingsPanel(QWidget):
         """
         return [widget.composition.layer_config for widget in self.layer_widgets]
 
-    def get_layer_compositions(self) -> List[LayerComposition]:
+    def get_layer_compositions(self) -> list[LayerComposition]:
         """
         Get list of added layers with their composition settings.
 
@@ -1237,10 +1234,7 @@ class SettingsPanel(QWidget):
             List of LayerComposition objects (in bottom-to-top order for compositing)
         """
         # Reverse order: top layer in UI should be composited last (on top)
-        return [
-            widget.get_composition()
-            for widget in reversed(self.layer_widgets)
-        ]
+        return [widget.get_composition() for widget in reversed(self.layer_widgets)]
 
     def get_state_dict(self):
         """
@@ -1261,12 +1255,12 @@ class SettingsPanel(QWidget):
         min_zoom, max_zoom = self.zoom_range_widget.value()
 
         state = {
-            'extent': self.current_extent.to_dict(),
-            'min_zoom': min_zoom,
-            'max_zoom': max_zoom,
-            'output': self.output_path_edit.text(),
-            'layers': [comp.to_dict() for comp in layer_compositions],
-            'web_compatible': self.web_compatible_checkbox.isChecked()
+            "extent": self.current_extent.to_dict(),
+            "min_zoom": min_zoom,
+            "max_zoom": max_zoom,
+            "output": self.output_path_edit.text(),
+            "layers": [comp.to_dict() for comp in layer_compositions],
+            "web_compatible": self.web_compatible_checkbox.isChecked(),
         }
 
         return state
@@ -1282,6 +1276,7 @@ class SettingsPanel(QWidget):
             ValueError: If state is invalid
         """
         from src.cli import validate_config
+
         validate_config(state)
 
         # Suppress state changes during load
@@ -1292,20 +1287,20 @@ class SettingsPanel(QWidget):
             self._clear_all_layers()
 
             # 2. Load layers (YAML has compositing order, reverse for UI display)
-            for layer_spec in reversed(state['layers']):
+            for layer_spec in reversed(state["layers"]):
                 comp = LayerComposition.from_dict(layer_spec)
                 self._add_layer_with_composition(comp)
 
             # 3. Set zoom range
-            min_zoom = state['min_zoom']
-            max_zoom = state['max_zoom']
+            min_zoom = state["min_zoom"]
+            max_zoom = state["max_zoom"]
             self.zoom_range_widget.set_value(min_zoom, max_zoom)
 
             # 4. Set output path
-            self.output_path_edit.setText(state['output'])
+            self.output_path_edit.setText(state["output"])
 
             # 5. Set extent
-            extent = Extent.from_dict(state['extent'])
+            extent = Extent.from_dict(state["extent"])
             self.current_extent = extent
             self.north_edit.setText(f"{extent.max_lat:.6f}")
             self.south_edit.setText(f"{extent.min_lat:.6f}")
@@ -1313,7 +1308,7 @@ class SettingsPanel(QWidget):
             self.west_edit.setText(f"{extent.min_lon:.6f}")
 
             # 6. Set web compatible mode
-            web_compatible = state.get('web_compatible', False)
+            web_compatible = state.get("web_compatible", False)
             self.web_compatible_checkbox.setChecked(web_compatible)
 
         finally:

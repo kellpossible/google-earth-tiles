@@ -2,22 +2,17 @@
 
 import tempfile
 from pathlib import Path
-from typing import List, Optional
 
-from PyQt6.QtCore import pyqtSignal, pyqtSlot, QUrl, QObject
+from PyQt6.QtCore import QObject, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtWebChannel import QWebChannel
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import (
-    QWebEngineSettings,
-    QWebEngineProfile,
-    QWebEngineUrlScheme
-)
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
-from src.core.config import DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, LAYERS, LayerConfig
+from src.core.config import DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM
+from src.gui.tile_compositor import PreviewTileSchemeHandler
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
-from src.gui.tile_compositor import PreviewTileSchemeHandler
 
 # Get absolute paths
 VENDOR_DIR = Path(__file__).parent.parent.parent / "resources" / "vendor"
@@ -95,7 +90,7 @@ class MapWidget(QWidget):
 
         # Install custom URL scheme handler
         profile = self.web_view.page().profile()
-        profile.installUrlSchemeHandler(b'preview', MapWidget._scheme_handler)
+        profile.installUrlSchemeHandler(b"preview", MapWidget._scheme_handler)
 
         # Configure web settings
         settings = self.web_view.page().settings()
@@ -106,7 +101,7 @@ class MapWidget(QWidget):
 
         # Set up web channel for JS communication
         self.channel = QWebChannel()
-        self.channel.registerObject('bridge', self.bridge)
+        self.channel.registerObject("bridge", self.bridge)
         self.web_view.page().setWebChannel(self.channel)
 
         layout.addWidget(self.web_view)
@@ -115,7 +110,7 @@ class MapWidget(QWidget):
         # Create and load initial map
         self.create_map()
 
-    def create_map(self, layer_compositions: Optional[List[LayerComposition]] = None, zoom: Optional[int] = None):
+    def create_map(self, layer_compositions: list[LayerComposition] | None = None, zoom: int | None = None):
         """
         Create map and load it in the web view.
 
@@ -134,24 +129,24 @@ class MapWidget(QWidget):
             MapWidget._scheme_handler.set_layer_compositions([])
 
         # Load template
-        with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
+        with open(TEMPLATE_PATH, encoding="utf-8") as f:
             template = f.read()
 
         # Replace placeholders
-        html = template.replace('VENDOR_PATH', str(VENDOR_DIR))
-        html = html.replace('MAP_LAT', str(DEFAULT_MAP_CENTER[0]))
-        html = html.replace('MAP_LON', str(DEFAULT_MAP_CENTER[1]))
-        html = html.replace('MAP_ZOOM', str(self.current_zoom))
+        html = template.replace("VENDOR_PATH", str(VENDOR_DIR))
+        html = html.replace("MAP_LAT", str(DEFAULT_MAP_CENTER[0]))
+        html = html.replace("MAP_LON", str(DEFAULT_MAP_CENTER[1]))
+        html = html.replace("MAP_ZOOM", str(self.current_zoom))
 
         # Save to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False, encoding="utf-8") as f:
             f.write(html)
             temp_path = f.name
 
         # Load the map
         self.web_view.setUrl(QUrl.fromLocalFile(temp_path))
 
-    def update_map_zoom_limits(self, layer_compositions: List[LayerComposition]):
+    def update_map_zoom_limits(self, layer_compositions: list[LayerComposition]):
         """
         Update map zoom limits to union of enabled layers.
 
@@ -159,6 +154,7 @@ class MapWidget(QWidget):
             layer_compositions: List of LayerComposition objects
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         if not layer_compositions:
@@ -172,7 +168,7 @@ class MapWidget(QWidget):
         self.web_view.page().runJavaScript(js_code)
         logger.info(f"Updated map zoom limits: {min_zoom}-{max_zoom}")
 
-    def update_layer_composition(self, layer_compositions: List[LayerComposition], update_zoom_limits: bool = True):
+    def update_layer_composition(self, layer_compositions: list[LayerComposition], update_zoom_limits: bool = True):
         """
         Update the map layers with new composition settings.
 
@@ -200,12 +196,7 @@ class MapWidget(QWidget):
             west: West longitude
             east: East longitude
         """
-        extent = Extent(
-            min_lon=west,
-            min_lat=south,
-            max_lon=east,
-            max_lat=north
-        )
+        extent = Extent(min_lon=west, min_lat=south, max_lon=east, max_lat=north)
 
         if extent.is_valid():
             self.extent_changed.emit(extent)
@@ -247,7 +238,7 @@ class MapWidget(QWidget):
         """
         self.web_view.page().runJavaScript(js_code)
 
-    def get_selected_extent(self) -> Optional[Extent]:
+    def get_selected_extent(self) -> Extent | None:
         """
         Get the currently selected extent.
 

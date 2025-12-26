@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
 
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
@@ -12,7 +11,7 @@ from src.models.layer_composition import LayerComposition
 class GenerationRequest:
     """Request parameters for KMZ generation."""
 
-    layer_compositions: List[LayerComposition]
+    layer_compositions: list[LayerComposition]
     min_zoom: int
     max_zoom: int
     extent: Extent
@@ -50,7 +49,7 @@ class GenerationRequest:
         """Get the number of zoom levels."""
         return self.max_zoom - self.min_zoom + 1
 
-    def copy(self) -> 'GenerationRequest':
+    def copy(self) -> "GenerationRequest":
         """Create a defensive copy of this request."""
         return GenerationRequest(
             layer_compositions=[comp.copy() for comp in self.layer_compositions],
@@ -58,5 +57,5 @@ class GenerationRequest:
             max_zoom=self.max_zoom,
             extent=self.extent.copy(),
             output_path=Path(self.output_path),
-            web_compatible=self.web_compatible
+            web_compatible=self.web_compatible,
         )

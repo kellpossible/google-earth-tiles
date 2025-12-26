@@ -1,7 +1,6 @@
 """Data model for geographic extents."""
 
 from dataclasses import dataclass, replace
-from typing import Dict
 
 from src.core.config import JAPAN_REGION_BOUNDS
 
@@ -22,12 +21,14 @@ class Extent:
         Returns:
             True if min values are less than max values
         """
-        return (self.min_lon < self.max_lon and
-                self.min_lat < self.max_lat and
-                -180 <= self.min_lon <= 180 and
-                -180 <= self.max_lon <= 180 and
-                -90 <= self.min_lat <= 90 and
-                -90 <= self.max_lat <= 90)
+        return (
+            self.min_lon < self.max_lon
+            and self.min_lat < self.max_lat
+            and -180 <= self.min_lon <= 180
+            and -180 <= self.max_lon <= 180
+            and -90 <= self.min_lat <= 90
+            and -90 <= self.max_lat <= 90
+        )
 
     def is_within_japan_region(self) -> bool:
         """
@@ -38,10 +39,10 @@ class Extent:
         """
         # Check if there's any overlap with Japan region
         overlaps = not (
-            self.max_lon < JAPAN_REGION_BOUNDS['min_lon'] or
-            self.min_lon > JAPAN_REGION_BOUNDS['max_lon'] or
-            self.max_lat < JAPAN_REGION_BOUNDS['min_lat'] or
-            self.min_lat > JAPAN_REGION_BOUNDS['max_lat']
+            self.max_lon < JAPAN_REGION_BOUNDS["min_lon"]
+            or self.min_lon > JAPAN_REGION_BOUNDS["max_lon"]
+            or self.max_lat < JAPAN_REGION_BOUNDS["min_lat"]
+            or self.min_lat > JAPAN_REGION_BOUNDS["max_lat"]
         )
         return overlaps
 
@@ -53,13 +54,13 @@ class Extent:
             True if entire extent is within valid WMTS coverage area
         """
         return (
-            self.min_lon >= JAPAN_REGION_BOUNDS['min_lon'] and
-            self.max_lon <= JAPAN_REGION_BOUNDS['max_lon'] and
-            self.min_lat >= JAPAN_REGION_BOUNDS['min_lat'] and
-            self.max_lat <= JAPAN_REGION_BOUNDS['max_lat']
+            self.min_lon >= JAPAN_REGION_BOUNDS["min_lon"]
+            and self.max_lon <= JAPAN_REGION_BOUNDS["max_lon"]
+            and self.min_lat >= JAPAN_REGION_BOUNDS["min_lat"]
+            and self.max_lat <= JAPAN_REGION_BOUNDS["max_lat"]
         )
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         """
         Convert extent to dictionary.
 
@@ -67,14 +68,14 @@ class Extent:
             Dictionary with min_lon, min_lat, max_lon, max_lat keys
         """
         return {
-            'min_lon': self.min_lon,
-            'min_lat': self.min_lat,
-            'max_lon': self.max_lon,
-            'max_lat': self.max_lat,
+            "min_lon": self.min_lon,
+            "min_lat": self.min_lat,
+            "max_lon": self.max_lon,
+            "max_lat": self.max_lat,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, float]) -> 'Extent':
+    def from_dict(cls, data: dict[str, float]) -> "Extent":
         """
         Create extent from dictionary.
 
@@ -85,13 +86,13 @@ class Extent:
             Extent instance
         """
         return cls(
-            min_lon=data['min_lon'],
-            min_lat=data['min_lat'],
-            max_lon=data['max_lon'],
-            max_lat=data['max_lat'],
+            min_lon=data["min_lon"],
+            min_lat=data["min_lat"],
+            max_lon=data["max_lon"],
+            max_lat=data["max_lat"],
         )
 
-    def copy(self) -> 'Extent':
+    def copy(self) -> "Extent":
         """
         Create a copy of this extent.
 

@@ -1,14 +1,13 @@
 """Tile calculation and coordinate conversion utilities."""
 
 import math
-from typing import Dict, List, Tuple
 
 
 class TileCalculator:
     """Utilities for tile math and coordinate conversions."""
 
     @staticmethod
-    def lat_lon_to_tile(lat: float, lon: float, zoom: int) -> Tuple[int, int]:
+    def lat_lon_to_tile(lat: float, lon: float, zoom: int) -> tuple[int, int]:
         """
         Convert latitude/longitude to tile coordinates.
 
@@ -20,7 +19,7 @@ class TileCalculator:
         Returns:
             Tuple of (x, y) tile coordinates
         """
-        n = 2.0 ** zoom
+        n = 2.0**zoom
         x = int((lon + 180.0) / 360.0 * n)
 
         lat_rad = math.radians(lat)
@@ -29,7 +28,7 @@ class TileCalculator:
         return (x, y)
 
     @staticmethod
-    def tile_to_lat_lon_bounds(x: int, y: int, zoom: int) -> Dict[str, float]:
+    def tile_to_lat_lon_bounds(x: int, y: int, zoom: int) -> dict[str, float]:
         """
         Convert tile coordinates to WGS84 lat/lon bounds.
 
@@ -41,7 +40,7 @@ class TileCalculator:
         Returns:
             Dictionary with 'north', 'south', 'east', 'west' bounds in degrees
         """
-        n = 2.0 ** zoom
+        n = 2.0**zoom
 
         # Northwest corner
         lon_west = x / n * 360.0 - 180.0
@@ -53,17 +52,12 @@ class TileCalculator:
         lat_south_rad = math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n)))
         lat_south = math.degrees(lat_south_rad)
 
-        return {
-            'north': lat_north,
-            'south': lat_south,
-            'east': lon_east,
-            'west': lon_west
-        }
+        return {"north": lat_north, "south": lat_south, "east": lon_east, "west": lon_west}
 
     @staticmethod
-    def get_tiles_in_extent(min_lon: float, min_lat: float,
-                           max_lon: float, max_lat: float,
-                           zoom: int) -> List[Tuple[int, int]]:
+    def get_tiles_in_extent(
+        min_lon: float, min_lat: float, max_lon: float, max_lat: float, zoom: int
+    ) -> list[tuple[int, int]]:
         """
         Get all tile coordinates within a geographic extent.
 
@@ -98,9 +92,7 @@ class TileCalculator:
         return tiles
 
     @staticmethod
-    def estimate_tile_count(min_lon: float, min_lat: float,
-                           max_lon: float, max_lat: float,
-                           zoom: int) -> int:
+    def estimate_tile_count(min_lon: float, min_lat: float, max_lon: float, max_lat: float, zoom: int) -> int:
         """
         Estimate the number of tiles in an extent.
 
@@ -145,8 +137,8 @@ class TileCalculator:
         """
         # Average tile sizes (approximate)
         avg_size_kb = {
-            'png': 50,  # PNG tiles average ~50KB
-            'jpg': 80,  # JPG tiles average ~80KB
+            "png": 50,  # PNG tiles average ~50KB
+            "jpg": 80,  # JPG tiles average ~80KB
         }
 
         size_kb = tile_count * avg_size_kb.get(layer_extension, 50)
@@ -154,10 +146,7 @@ class TileCalculator:
 
     @staticmethod
     def calculate_chunks_at_zoom(
-        min_lon: float, min_lat: float,
-        max_lon: float, max_lat: float,
-        zoom: int,
-        chunk_size: int = 8
+        min_lon: float, min_lat: float, max_lon: float, max_lat: float, zoom: int, chunk_size: int = 8
     ) -> int:
         """
         Calculate number of chunks needed for extent at zoom level.
@@ -197,11 +186,13 @@ class TileCalculator:
 
     @staticmethod
     def find_max_web_compatible_zoom(
-        min_lon: float, min_lat: float,
-        max_lon: float, max_lat: float,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
         layer_count: int,
         max_chunks_per_layer: int = 500,
-        chunk_size: int = 8
+        chunk_size: int = 8,
     ) -> int:
         """
         Find largest zoom level that stays under chunk limit for web compatibility.
@@ -236,11 +227,7 @@ class TileCalculator:
         return 2
 
     @staticmethod
-    def get_chunk_grid(
-        tiles: List[Tuple[int, int]],
-        zoom: int,
-        chunk_size: int = 8
-    ) -> List[Dict]:
+    def get_chunk_grid(tiles: list[tuple[int, int]], zoom: int, chunk_size: int = 8) -> list[dict]:
         """
         Group tiles into NxN chunks and calculate their geographic bounds.
 
@@ -281,17 +268,12 @@ class TileCalculator:
             # Calculate chunk bounds from constituent tiles
             chunk_bounds = TileCalculator.calculate_chunk_bounds(chunk_tiles, zoom)
 
-            chunks.append({
-                'chunk_x': chunk_x,
-                'chunk_y': chunk_y,
-                'tiles': chunk_tiles,
-                'bounds': chunk_bounds
-            })
+            chunks.append({"chunk_x": chunk_x, "chunk_y": chunk_y, "tiles": chunk_tiles, "bounds": chunk_bounds})
 
         return chunks
 
     @staticmethod
-    def calculate_chunk_bounds(tiles: List[Tuple[int, int]], zoom: int) -> Dict[str, float]:
+    def calculate_chunk_bounds(tiles: list[tuple[int, int]], zoom: int) -> dict[str, float]:
         """
         Calculate geographic bounds for a chunk from its constituent tiles.
 
@@ -303,7 +285,7 @@ class TileCalculator:
             Dictionary with 'north', 'south', 'east', 'west' bounds in degrees
         """
         if not tiles:
-            return {'north': 0.0, 'south': 0.0, 'east': 0.0, 'west': 0.0}
+            return {"north": 0.0, "south": 0.0, "east": 0.0, "west": 0.0}
 
         x_coords = [x for x, y in tiles]
         y_coords = [y for x, y in tiles]
@@ -316,8 +298,8 @@ class TileCalculator:
         se_bounds = TileCalculator.tile_to_lat_lon_bounds(x_max, y_max, zoom)
 
         return {
-            'north': nw_bounds['north'],
-            'south': se_bounds['south'],
-            'east': se_bounds['east'],
-            'west': nw_bounds['west']
+            "north": nw_bounds["north"],
+            "south": se_bounds["south"],
+            "east": se_bounds["east"],
+            "west": nw_bounds["west"],
         }

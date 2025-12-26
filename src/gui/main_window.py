@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from PyQt6 import QtGui
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal
@@ -14,7 +13,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QStatusBar,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -23,9 +21,7 @@ from src.core.tile_calculator import TileCalculator
 from src.gui.file_operations import FileOperations
 from src.gui.map_widget import MapWidget
 from src.gui.settings_panel import SettingsPanel
-from src.models.extent import Extent
 from src.models.generation_request import GenerationRequest
-from src.models.layer_composition import LayerComposition
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +58,7 @@ class ExportWorker(QThread):
                     self.request.extent.min_lat,
                     self.request.extent.max_lon,
                     self.request.extent.max_lat,
-                    zoom_level
+                    zoom_level,
                 )
                 total_tiles += len(tiles_at_zoom)
 
@@ -71,9 +67,7 @@ class ExportWorker(QThread):
             # Generate KMZ (tiles will be fetched on-demand with caching)
             is_multi_zoom = min_zoom < max_zoom
             self.progress.emit(
-                0,
-                total_units,
-                "Generating KMZ with LOD pyramid..." if is_multi_zoom else "Generating KMZ..."
+                0, total_units, "Generating KMZ with LOD pyramid..." if is_multi_zoom else "Generating KMZ..."
             )
 
             def kmz_progress(current: int, total: int, message: str):
@@ -82,11 +76,7 @@ class ExportWorker(QThread):
 
             generator = KMZGenerator(self.request.output_path, kmz_progress)
             result_path = generator.create_kmz(
-                self.request.extent,
-                min_zoom,
-                max_zoom,
-                self.request.layer_compositions,
-                self.request.web_compatible
+                self.request.extent, min_zoom, max_zoom, self.request.layer_compositions, self.request.web_compatible
             )
 
             self.finished.emit(result_path)
@@ -226,7 +216,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Invalid Extent",
                 "The selected extent is outside the valid region for this WMTS service.\n"
-                "Please select an area within Japan (approximately 122°E-154°E, 20°N-46°N)."
+                "Please select an area within Japan (approximately 122°E-154°E, 20°N-46°N).",
             )
             return
 
@@ -237,7 +227,7 @@ class MainWindow(QMainWindow):
                 "Extent Warning",
                 "The selected extent is partially outside the valid region.\n"
                 "Some tiles may not be available. Continue anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -249,9 +239,11 @@ class MainWindow(QMainWindow):
         total_tiles = 0
         for zoom_level in range(request.min_zoom, request.max_zoom + 1):
             tile_count = TileCalculator.estimate_tile_count(
-                request.extent.min_lon, request.extent.min_lat,
-                request.extent.max_lon, request.extent.max_lat,
-                zoom_level
+                request.extent.min_lon,
+                request.extent.min_lat,
+                request.extent.max_lon,
+                request.extent.max_lat,
+                zoom_level,
             )
             total_tiles += tile_count * len(layers)
 
@@ -263,7 +255,7 @@ class MainWindow(QMainWindow):
                 f"This will download {total_tiles:,} tiles.\n"
                 f"This may take a while and use significant bandwidth.\n\n"
                 "Continue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -314,11 +306,7 @@ class MainWindow(QMainWindow):
             result_path: Path to created KMZ file
         """
         # Show success message
-        QMessageBox.information(
-            self,
-            "Success",
-            f"KMZ file created successfully!\n\nSaved to: {result_path}"
-        )
+        QMessageBox.information(self, "Success", f"KMZ file created successfully!\n\nSaved to: {result_path}")
 
         self.status_bar.showMessage("Ready")
         self.progress_bar.setVisible(False)
@@ -331,11 +319,7 @@ class MainWindow(QMainWindow):
         Args:
             error_message: Error message
         """
-        QMessageBox.critical(
-            self,
-            "Export Error",
-            f"Failed to export KMZ:\n{error_message}"
-        )
+        QMessageBox.critical(self, "Export Error", f"Failed to export KMZ:\n{error_message}")
 
         self.progress_bar.setVisible(False)
         self.settings_panel.generate_button.setEnabled(True)
@@ -435,12 +419,10 @@ class MainWindow(QMainWindow):
             for i, file_path_str in enumerate(recent_files[:5]):
                 file_path = Path(file_path_str)
 
-                action = QAction(f"&{i+1} {file_path.name}", self)
+                action = QAction(f"&{i + 1} {file_path.name}", self)
                 action.setStatusTip(str(file_path))
                 action.setData(file_path_str)
-                action.triggered.connect(
-                    lambda checked, path=file_path_str: self._open_recent_file(path)
-                )
+                action.triggered.connect(lambda checked, path=file_path_str: self._open_recent_file(path))
                 self.file_menu.insertAction(self.recent_files_end_separator, action)
                 self.recent_file_actions.append(action)
 
@@ -453,15 +435,13 @@ class MainWindow(QMainWindow):
 
                     # Use numbered shortcuts (6-9, then 0)
                     if i < 9:
-                        action = QAction(f"&{i+1} {file_path.name}", self)
+                        action = QAction(f"&{i + 1} {file_path.name}", self)
                     else:
                         action = QAction(f"&0 {file_path.name}", self)
 
                     action.setStatusTip(str(file_path))
                     action.setData(file_path_str)
-                    action.triggered.connect(
-                        lambda checked, path=file_path_str: self._open_recent_file(path)
-                    )
+                    action.triggered.connect(lambda checked, path=file_path_str: self._open_recent_file(path))
                     more_menu.addAction(action)
 
                 # Insert More submenu
@@ -486,9 +466,7 @@ class MainWindow(QMainWindow):
             file_path_str: String path to recent file
         """
         if self.file_ops.open_recent(
-            Path(file_path_str),
-            self.settings_panel.load_state_dict,
-            self.settings_panel.get_state_dict
+            Path(file_path_str), self.settings_panel.load_state_dict, self.settings_panel.get_state_dict
         ):
             self._update_window_title()
             self._update_recent_files_menu()
@@ -498,7 +476,7 @@ class MainWindow(QMainWindow):
         self.file_ops.clear_recent_files()
         self._update_recent_files_menu()
 
-    def closeEvent(self, a0: Optional[QtGui.QCloseEvent]) -> None:
+    def closeEvent(self, a0: QtGui.QCloseEvent | None) -> None:
         """
         Handle window close event.
 

@@ -35,6 +35,7 @@ packages = ["src"]
 dev = [
     "pytest>=9.0.2",
     "ty>=0.0.7",
+    "ruff>=0.14.10",
 ]
 
 [tool.ty]
@@ -46,3 +47,47 @@ python-version = "3.11"  # Minimum supported version from requires-python
 [tool.ty.src]
 # Respect .gitignore and similar files for exclusions
 respect-ignore-files = true
+
+[tool.ruff]
+# Target Python 3.11+
+target-version = "py311"
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+# Line length
+line-length = 120
+
+[tool.ruff.lint]
+# Enable recommended rules + import sorting
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+# Ignore specific rules if needed
+ignore = [
+    "E501",  # Line too long (handled by formatter)
+    "N802",  # Function name should be lowercase (PyQt uses camelCase for overrides)
+    "N815",  # Variable in class scope should not be mixedCase (PyQt signals use camelCase)
+]
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with spaces
+indent-style = "space"

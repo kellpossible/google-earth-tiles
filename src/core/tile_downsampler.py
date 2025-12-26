@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 from PIL import Image
 
@@ -14,11 +13,8 @@ class TileDownsampler:
 
     @staticmethod
     def downsample_tile_level(
-        source_tiles: List[Tuple[Path, int, int, int]],
-        target_zoom: int,
-        output_dir: Path,
-        progress_callback=None
-    ) -> List[Tuple[Path, int, int, int]]:
+        source_tiles: list[tuple[Path, int, int, int]], target_zoom: int, output_dir: Path, progress_callback=None
+    ) -> list[tuple[Path, int, int, int]]:
         """
         Downsample a collection of tiles at zoom N to create tiles at zoom N-1.
 
@@ -35,9 +31,9 @@ class TileDownsampler:
             List of (tile_path, x, y, z) at target_zoom
         """
         # Group source tiles by parent tile coordinates
-        parent_groups: Dict[Tuple[int, int], List[Tuple[Path, int, int]]] = {}
+        parent_groups: dict[tuple[int, int], list[tuple[Path, int, int]]] = {}
 
-        for tile_path, x, y, z in source_tiles:
+        for tile_path, x, y, _z in source_tiles:
             # Calculate parent tile coordinates at target_zoom
             parent_x = x // 2
             parent_y = y // 2
@@ -62,7 +58,7 @@ class TileDownsampler:
 
             # Create 512x512 canvas (will downsample to 256x256)
             # Initialize with transparent background
-            canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+            canvas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
 
             # Place child tiles on canvas
             for tile_path, offset_x, offset_y in children:
@@ -71,7 +67,7 @@ class TileDownsampler:
                     continue
 
                 try:
-                    child_img = Image.open(tile_path).convert('RGBA')
+                    child_img = Image.open(tile_path).convert("RGBA")
                     paste_x = offset_x * 256
                     paste_y = offset_y * 256
                     canvas.paste(child_img, (paste_x, paste_y))
@@ -84,7 +80,7 @@ class TileDownsampler:
 
             # Save downsampled tile
             output_path = output_dir / f"{target_zoom}_{parent_x}_{parent_y}.png"
-            downsampled.save(output_path, 'PNG')
+            downsampled.save(output_path, "PNG")
 
             downsampled_tiles.append((output_path, parent_x, parent_y, target_zoom))
 
@@ -96,12 +92,12 @@ class TileDownsampler:
 
     @staticmethod
     def generate_lod_pyramid(
-        max_zoom_tiles: List[Tuple[Path, int, int, int]],
+        max_zoom_tiles: list[tuple[Path, int, int, int]],
         max_zoom: int,
         min_zoom: int,
         output_dir: Path,
-        progress_callback=None
-    ) -> Dict[int, List[Tuple[Path, int, int, int]]]:
+        progress_callback=None,
+    ) -> dict[int, list[tuple[Path, int, int, int]]]:
         """
         Generate complete LOD pyramid from max zoom down to min zoom.
 
@@ -129,18 +125,10 @@ class TileDownsampler:
             logger.info(f"Downsampling from zoom {zoom + 1} to {zoom}...")
 
             # Downsample from current tiles to next zoom level
-            downsampled = TileDownsampler.downsample_tile_level(
-                current_tiles,
-                zoom,
-                zoom_dir,
-                progress_callback
-            )
+            downsampled = TileDownsampler.downsample_tile_level(current_tiles, zoom, zoom_dir, progress_callback)
 
             pyramid[zoom] = downsampled
             current_tiles = downsampled
 
-        logger.info(
-            f"Generated LOD pyramid with {len(pyramid)} zoom levels "
-            f"(zoom {min_zoom} to {max_zoom})"
-        )
+        logger.info(f"Generated LOD pyramid with {len(pyramid)} zoom levels (zoom {min_zoom} to {max_zoom})")
         return pyramid

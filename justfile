@@ -1,6 +1,12 @@
-# Run type checking with ty
+# Run linting (ruff + type checking)
 lint:
+    uv run ruff check .
     uv run ty check
+
+# Format code with ruff
+format:
+    uv run ruff format .
+    uv run ruff check --fix .
 
 # Run type checking on a specific path
 lint-path PATH:

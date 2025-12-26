@@ -6,16 +6,14 @@ import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import simplekml
 from PIL import Image
 
-from src.core.config import LayerConfig
 from src.core.tile_calculator import TileCalculator
+from src.gui.tile_compositor import TileCompositor
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
-from src.gui.tile_compositor import TileCompositor
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,7 @@ class KMZGenerator:
         self.progress_callback = progress_callback
 
     @staticmethod
-    def calculate_lod_pixels(zoom: int, min_zoom: int, max_zoom: int) -> Tuple[int, int]:
+    def calculate_lod_pixels(zoom: int, min_zoom: int, max_zoom: int) -> tuple[int, int]:
         """
         Calculate LOD pixel thresholds for a zoom level.
 
@@ -45,7 +43,7 @@ class KMZGenerator:
         tiles appear early. Lower zoom tiles hide as you zoom in, while higher
         zoom tiles stay visible.
 
-        Reference: 
+        Reference:
             https://developers.google.com/kml/documentation/regions
             https://www.google.com/earth/outreach/learn/avoiding-overload-with-regions/
             https://developers.google.com/kml/documentation/kmlreference#minlodpixels
@@ -62,19 +60,19 @@ class KMZGenerator:
         if min_zoom == max_zoom:
             # Single zoom level - always visible
             return (-1, -1)
-        
+
         if zoom == max_zoom:
             return (80, -1)
-        
+
         if zoom == min_zoom:
             return (-1, 256)
-        
+
         return (80, 256)
 
     @staticmethod
     def _separate_layers_by_export_mode(
-        layer_compositions: List[LayerComposition]
-    ) -> Tuple[List[LayerComposition], List[LayerComposition]]:
+        layer_compositions: list[LayerComposition],
+    ) -> tuple[list[LayerComposition], list[LayerComposition]]:
         """
         Separate layers into composite and separate groups.
 
@@ -107,13 +105,8 @@ class KMZGenerator:
         return composited, separate
 
     async def _fetch_separate_layer_tiles(
-        self,
-        extent: Extent,
-        min_zoom: int,
-        max_zoom: int,
-        layer_composition: LayerComposition,
-        temp_dir: Path
-    ) -> Dict[int, List[Tuple[Path, int, int, int]]]:
+        self, extent: Extent, min_zoom: int, max_zoom: int, layer_composition: LayerComposition, temp_dir: Path
+    ) -> dict[int, list[tuple[Path, int, int, int]]]:
         """
         Fetch tiles for a single separate layer, reusing compositor logic.
 
@@ -158,14 +151,16 @@ class KMZGenerator:
                 # Use compositor to fetch and resample tile
                 # Compositor automatically handles resampling from nearest available zoom
                 tile_data = await self.compositor.composite_tile(
-                    x, y, zoom_level,
-                    [temp_composition]  # Single-layer "composition"
+                    x,
+                    y,
+                    zoom_level,
+                    [temp_composition],  # Single-layer "composition"
                 )
 
                 if tile_data:
                     # Save to temp file with layer name prefix
                     tile_path = temp_dir / f"{layer_name}_{zoom_level}_{x}_{y}.png"
-                    with open(tile_path, 'wb') as f:
+                    with open(tile_path, "wb") as f:
                         f.write(tile_data)
                     fetched_tiles.append((tile_path, x, y, zoom_level))
 
@@ -177,9 +172,9 @@ class KMZGenerator:
     def _add_separate_layer_tiles(
         self,
         layer_name: str,
-        tiles_by_zoom: Dict[int, List[Tuple[Path, int, int, int]]],
+        tiles_by_zoom: dict[int, list[tuple[Path, int, int, int]]],
         opacity: int,
-        lod_config: Optional[dict] = None
+        lod_config: dict | None = None,
     ):
         """
         Add a separate layer's tiles to KML with its own folder and KML-level opacity.
@@ -207,15 +202,12 @@ class KMZGenerator:
                 continue
 
             # Create folder for this zoom level
-            if lod_config:
-                zoom_folder_name = f"Zoom {zoom_level}"
-            else:
-                zoom_folder_name = f"{layer_name} Tiles"
+            zoom_folder_name = f"Zoom {zoom_level}" if lod_config else f"{layer_name} Tiles"
 
             zoom_folder = layer_folder.newfolder(name=zoom_folder_name)
 
             # Add each tile as GroundOverlay
-            for tile_path, x, y, z in tiles:
+            for _tile_path, x, y, z in tiles:
                 bounds = TileCalculator.tile_to_lat_lon_bounds(x, y, z)
 
                 ground = zoom_folder.newgroundoverlay(name=f"Tile {z}/{x}/{y}")
@@ -225,10 +217,10 @@ class KMZGenerator:
                 ground.icon.href = icon_path
 
                 # Set geographic bounds
-                ground.latlonbox.north = bounds['north']
-                ground.latlonbox.south = bounds['south']
-                ground.latlonbox.east = bounds['east']
-                ground.latlonbox.west = bounds['west']
+                ground.latlonbox.north = bounds["north"]
+                ground.latlonbox.south = bounds["south"]
+                ground.latlonbox.east = bounds["east"]
+                ground.latlonbox.west = bounds["west"]
 
                 # Apply KML-level opacity via color
                 ground.color = kml_color
@@ -236,15 +228,13 @@ class KMZGenerator:
                 # Add Region and LOD if configured
                 if lod_config:
                     min_lod, max_lod = self.calculate_lod_pixels(
-                        zoom_level,
-                        lod_config['min_zoom'],
-                        lod_config['max_zoom']
+                        zoom_level, lod_config["min_zoom"], lod_config["max_zoom"]
                     )
 
-                    ground.region.latlonaltbox.north = bounds['north']
-                    ground.region.latlonaltbox.south = bounds['south']
-                    ground.region.latlonaltbox.east = bounds['east']
-                    ground.region.latlonaltbox.west = bounds['west']
+                    ground.region.latlonaltbox.north = bounds["north"]
+                    ground.region.latlonaltbox.south = bounds["south"]
+                    ground.region.latlonaltbox.east = bounds["east"]
+                    ground.region.latlonaltbox.west = bounds["west"]
 
                     ground.region.lod.minlodpixels = min_lod
                     ground.region.lod.maxlodpixels = max_lod
@@ -259,8 +249,8 @@ class KMZGenerator:
         extent: Extent,
         min_zoom: int,
         max_zoom: int,
-        layer_compositions: List[LayerComposition],
-        web_compatible: bool = False
+        layer_compositions: list[LayerComposition],
+        web_compatible: bool = False,
     ) -> Path:
         """
         Create KMZ file with composited and/or separate layers.
@@ -292,10 +282,12 @@ class KMZGenerator:
             effective_layer_count = (1 if composited_layers else 0) + len(separate_layers)
 
             calculated_max_zoom = TileCalculator.find_max_web_compatible_zoom(
-                extent.min_lon, extent.min_lat,
-                extent.max_lon, extent.max_lat,
+                extent.min_lon,
+                extent.min_lat,
+                extent.max_lon,
+                extent.max_lat,
                 effective_layer_count,
-                max_chunks_per_layer=500
+                max_chunks_per_layer=500,
             )
 
             # Determine actual zoom to use
@@ -336,7 +328,9 @@ class KMZGenerator:
         kml_temp_path = None
 
         try:
-            logger.info(f"Using extent: {extent.min_lon:.6f}, {extent.min_lat:.6f} to {extent.max_lon:.6f}, {extent.max_lat:.6f}")
+            logger.info(
+                f"Using extent: {extent.min_lon:.6f}, {extent.min_lat:.6f} to {extent.max_lon:.6f}, {extent.max_lat:.6f}"
+            )
             logger.info(f"Composited layers: {len(composited_layers)}, Separate layers: {len(separate_layers)}")
 
             # Calculate total tiles for progress tracking
@@ -369,18 +363,14 @@ class KMZGenerator:
 
                         if self.progress_callback:
                             self.progress_callback(
-                                processed_count,
-                                total_tiles,
-                                f"Compositing tile {processed_count}/{total_tiles}..."
+                                processed_count, total_tiles, f"Compositing tile {processed_count}/{total_tiles}..."
                             )
 
-                        tile_data = await self.compositor.composite_tile(
-                            x, y, zoom_level, composited_layers
-                        )
+                        tile_data = await self.compositor.composite_tile(x, y, zoom_level, composited_layers)
 
                         if tile_data:
                             tile_path = temp_dir / f"composited_{zoom_level}_{x}_{y}.png"
-                            with open(tile_path, 'wb') as f:
+                            with open(tile_path, "wb") as f:
                                 f.write(tile_data)
                             composited_tiles.append((tile_path, x, y, zoom_level))
 
@@ -393,20 +383,14 @@ class KMZGenerator:
                 logger.info(f"Fetching separate layer: {layer_comp.layer_config.name}...")
 
                 # Update progress before fetching (tiles will update within the method)
-                tiles_by_zoom = await self._fetch_separate_layer_tiles(
-                    extent, min_zoom, max_zoom, layer_comp, temp_dir
-                )
+                tiles_by_zoom = await self._fetch_separate_layer_tiles(extent, min_zoom, max_zoom, layer_comp, temp_dir)
 
                 # Update progress after layer completion
                 for tiles in tiles_by_zoom.values():
                     processed_count += len(tiles)
 
                 if self.progress_callback:
-                    self.progress_callback(
-                        processed_count,
-                        total_tiles,
-                        f"Fetched {layer_comp.layer_config.name}"
-                    )
+                    self.progress_callback(processed_count, total_tiles, f"Fetched {layer_comp.layer_config.name}")
 
                 separate_layers_tiles[layer_comp.layer_config.name] = tiles_by_zoom
 
@@ -414,12 +398,12 @@ class KMZGenerator:
             if self.progress_callback:
                 self.progress_callback(0, 1, "Creating KML document...")
 
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.kml', delete=False) as kml_file:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".kml", delete=False) as kml_file:
                 kml_temp_path = Path(kml_file.name)
 
             lod_kml_config = None
             if min_zoom < max_zoom:
-                lod_kml_config = {'min_zoom': min_zoom, 'max_zoom': max_zoom}
+                lod_kml_config = {"min_zoom": min_zoom, "max_zoom": max_zoom}
 
             # Add composited tiles to KML
             if composited_layers:
@@ -430,10 +414,7 @@ class KMZGenerator:
 
                 for zoom_level in sorted(composited_tiles_by_zoom.keys(), reverse=True):
                     self._add_composited_tiles(
-                        composited_tiles_by_zoom[zoom_level],
-                        zoom_level,
-                        lod_kml_config,
-                        parent_folder=base_folder
+                        composited_tiles_by_zoom[zoom_level], zoom_level, lod_kml_config, parent_folder=base_folder
                     )
 
             # Add separate layers to KML
@@ -441,10 +422,7 @@ class KMZGenerator:
                 layer_name = layer_comp.layer_config.name
                 if layer_name in separate_layers_tiles:
                     self._add_separate_layer_tiles(
-                        layer_name,
-                        separate_layers_tiles[layer_name],
-                        layer_comp.opacity,
-                        lod_kml_config
+                        layer_name, separate_layers_tiles[layer_name], layer_comp.opacity, lod_kml_config
                     )
 
             # Save KML
@@ -476,8 +454,8 @@ class KMZGenerator:
         extent: Extent,
         min_zoom: int,
         max_zoom: int,
-        layer_compositions: List[LayerComposition],
-        web_compatible: bool = False
+        layer_compositions: list[LayerComposition],
+        web_compatible: bool = False,
     ) -> Path:
         """
         Create KMZ file with composited tiles and optional LOD (synchronous wrapper).
@@ -504,11 +482,7 @@ class KMZGenerator:
         )
 
     def _add_composited_tiles(
-        self,
-        tiles: List[Tuple[Path, int, int, int]],
-        zoom: int,
-        lod_config: Optional[dict] = None,
-        parent_folder=None
+        self, tiles: list[tuple[Path, int, int, int]], zoom: int, lod_config: dict | None = None, parent_folder=None
     ):
         """
         Add composited tiles to the KML document.
@@ -523,17 +497,14 @@ class KMZGenerator:
             return
 
         # Create folder for this zoom level
-        if lod_config:
-            folder_name = f"Zoom {zoom}"
-        else:
-            folder_name = "Composited Tiles"
+        folder_name = f"Zoom {zoom}" if lod_config else "Composited Tiles"
 
         # Use parent folder if provided, otherwise use root kml
         kml_or_folder = parent_folder if parent_folder else self.kml
         folder = kml_or_folder.newfolder(name=folder_name)
 
         # Add each tile as GroundOverlay
-        for tile_path, x, y, z in tiles:
+        for _tile_path, x, y, z in tiles:
             bounds = TileCalculator.tile_to_lat_lon_bounds(x, y, z)
 
             ground = folder.newgroundoverlay(name=f"Tile {z}/{x}/{y}")
@@ -543,24 +514,20 @@ class KMZGenerator:
             ground.icon.href = icon_path
 
             # Set geographic bounds
-            ground.latlonbox.north = bounds['north']
-            ground.latlonbox.south = bounds['south']
-            ground.latlonbox.east = bounds['east']
-            ground.latlonbox.west = bounds['west']
+            ground.latlonbox.north = bounds["north"]
+            ground.latlonbox.south = bounds["south"]
+            ground.latlonbox.east = bounds["east"]
+            ground.latlonbox.west = bounds["west"]
 
             # Add Region and LOD if configured
             if lod_config:
-                min_lod, max_lod = self.calculate_lod_pixels(
-                    zoom,
-                    lod_config['min_zoom'],
-                    lod_config['max_zoom']
-                )
+                min_lod, max_lod = self.calculate_lod_pixels(zoom, lod_config["min_zoom"], lod_config["max_zoom"])
 
                 # Create Region with LatLonAltBox matching tile bounds
-                ground.region.latlonaltbox.north = bounds['north']
-                ground.region.latlonaltbox.south = bounds['south']
-                ground.region.latlonaltbox.east = bounds['east']
-                ground.region.latlonaltbox.west = bounds['west']
+                ground.region.latlonaltbox.north = bounds["north"]
+                ground.region.latlonaltbox.south = bounds["south"]
+                ground.region.latlonaltbox.east = bounds["east"]
+                ground.region.latlonaltbox.west = bounds["west"]
 
                 # Set LOD pixel thresholds
                 ground.region.lod.minlodpixels = min_lod
@@ -574,7 +541,7 @@ class KMZGenerator:
     def _create_kmz_archive(
         self,
         kml_path: Path,
-        composited_tiles: List[Tuple[Path, int, int, int]],
+        composited_tiles: list[tuple[Path, int, int, int]],
     ):
         """
         Create KMZ archive with KML and composited tile images.
@@ -586,9 +553,9 @@ class KMZGenerator:
         # Ensure output directory exists
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with zipfile.ZipFile(self.output_path, 'w', zipfile.ZIP_DEFLATED) as kmz:
+        with zipfile.ZipFile(self.output_path, "w", zipfile.ZIP_DEFLATED) as kmz:
             # Add KML file (must be named doc.kml at root)
-            kmz.write(kml_path, 'doc.kml')
+            kmz.write(kml_path, "doc.kml")
 
             # Add composited tile images
             for tile_path, x, y, z in composited_tiles:
@@ -605,8 +572,8 @@ class KMZGenerator:
     def _create_kmz_archive_multi(
         self,
         kml_path: Path,
-        composited_tiles: List[Tuple[Path, int, int, int]],
-        separate_layers_tiles: Dict[str, Dict[int, List[Tuple[Path, int, int, int]]]]
+        composited_tiles: list[tuple[Path, int, int, int]],
+        separate_layers_tiles: dict[str, dict[int, list[tuple[Path, int, int, int]]]],
     ):
         """
         Create KMZ archive with KML and tile images organized by layer.
@@ -619,9 +586,9 @@ class KMZGenerator:
         # Ensure output directory exists
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with zipfile.ZipFile(self.output_path, 'w', zipfile.ZIP_DEFLATED) as kmz:
+        with zipfile.ZipFile(self.output_path, "w", zipfile.ZIP_DEFLATED) as kmz:
             # Add KML file (must be named doc.kml at root)
-            kmz.write(kml_path, 'doc.kml')
+            kmz.write(kml_path, "doc.kml")
 
             # Add composited tile images
             composited_count = 0
@@ -649,16 +616,18 @@ class KMZGenerator:
                         kmz.write(tile_path, arcname)
                         separate_count += 1
 
-        logger.info(f"KMZ archive created with {composited_count} composited tiles and {separate_count} separate layer tiles")
+        logger.info(
+            f"KMZ archive created with {composited_count} composited tiles and {separate_count} separate layer tiles"
+        )
 
     def _create_chunks_from_tiles(
         self,
-        tiles: List[Tuple[Path, int, int, int]],
-        chunk_grid: List[Dict],
+        tiles: list[tuple[Path, int, int, int]],
+        chunk_grid: list[dict],
         zoom: int,
         temp_dir: Path,
-        output_prefix: str
-    ) -> List[Dict]:
+        output_prefix: str,
+    ) -> list[dict]:
         """
         Create chunks by grouping and merging tiles.
 
@@ -681,7 +650,7 @@ class KMZGenerator:
             chunk_tiles = []
 
             # Collect tiles for this chunk
-            for x, y in chunk_info['tiles']:
+            for x, y in chunk_info["tiles"]:
                 if (x, y) in tile_map:
                     tile_path = tile_map[(x, y)]
                     chunk_tiles.append((tile_path, x, y, zoom))
@@ -691,18 +660,15 @@ class KMZGenerator:
                 chunk_image = self.merge_tiles_to_chunk(chunk_tiles, zoom)
 
                 # Save chunk
-                chunk_x = chunk_info['chunk_x']
-                chunk_y = chunk_info['chunk_y']
+                chunk_x = chunk_info["chunk_x"]
+                chunk_y = chunk_info["chunk_y"]
                 chunk_path = temp_dir / f"chunk_{output_prefix}_{zoom}_{chunk_x}_{chunk_y}.png"
-                chunk_image.save(chunk_path, format='PNG')
+                chunk_image.save(chunk_path, format="PNG")
                 chunk_image.close()
 
-                chunks.append({
-                    'chunk_x': chunk_x,
-                    'chunk_y': chunk_y,
-                    'bounds': chunk_info['bounds'],
-                    'image_path': chunk_path
-                })
+                chunks.append(
+                    {"chunk_x": chunk_x, "chunk_y": chunk_y, "bounds": chunk_info["bounds"], "image_path": chunk_path}
+                )
 
                 # Clean up individual tile files
                 for tile_path, _, _, _ in chunk_tiles:
@@ -712,10 +678,7 @@ class KMZGenerator:
         return chunks
 
     def merge_tiles_to_chunk(
-        self,
-        tiles: List[Tuple[Path, int, int, int]],
-        zoom: int,
-        chunk_size: int = 8
+        self, tiles: list[tuple[Path, int, int, int]], zoom: int, chunk_size: int = 8
     ) -> Image.Image:
         """
         Merge 256x256 tiles into a single chunk image.
@@ -740,10 +703,10 @@ class KMZGenerator:
         # Create canvas (may be smaller than chunk_size*256 for partial chunks at edges)
         width = (x_max - x_min + 1) * 256
         height = (y_max - y_min + 1) * 256
-        canvas = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
 
         # Place each tile
-        for tile_path, x, y, z in tiles:
+        for tile_path, x, y, _z in tiles:
             if not tile_path.exists():
                 logger.warning(f"Tile not found: {tile_path}")
                 continue
@@ -753,9 +716,7 @@ class KMZGenerator:
 
                 # Sanity check: ensure tile is 256x256 as expected
                 if tile_img.size != (256, 256):
-                    logger.error(
-                        f"Tile size mismatch: expected 256x256, got {tile_img.size} for {tile_path}"
-                    )
+                    logger.error(f"Tile size mismatch: expected 256x256, got {tile_img.size} for {tile_path}")
                     tile_img.close()
                     continue
 
@@ -771,10 +732,7 @@ class KMZGenerator:
         return canvas
 
     async def _create_kmz_web_compatible(
-        self,
-        extent: Extent,
-        zoom: int,
-        layer_compositions: List[LayerComposition]
+        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition]
     ) -> Path:
         """
         Create web-compatible KMZ with merged chunks.
@@ -788,16 +746,11 @@ class KMZGenerator:
             Path to created KMZ file
         """
         # Separate layers
-        composited_layers, separate_layers = self._separate_layers_by_export_mode(
-            layer_compositions
-        )
+        composited_layers, separate_layers = self._separate_layers_by_export_mode(layer_compositions)
 
         # Set document metadata
         self.kml.document.name = f"GSI Tiles - Zoom {zoom} (Web Compatible)"
-        self.kml.document.description = (
-            f"Generated: {datetime.now().isoformat()}\n"
-            f"Optimized for Google Earth Web"
-        )
+        self.kml.document.description = f"Generated: {datetime.now().isoformat()}\nOptimized for Google Earth Web"
 
         temp_dir = Path(tempfile.mkdtemp())
         kml_temp_path = None
@@ -805,9 +758,7 @@ class KMZGenerator:
         try:
             # Get all tiles at this zoom
             tiles_at_zoom = TileCalculator.get_tiles_in_extent(
-                extent.min_lon, extent.min_lat,
-                extent.max_lon, extent.max_lat,
-                zoom
+                extent.min_lon, extent.min_lat, extent.max_lon, extent.max_lat, zoom
             )
 
             # Calculate chunk grid (8x8 tiles per chunk = 2048x2048 pixels)
@@ -819,7 +770,7 @@ class KMZGenerator:
             total_chunks = len(chunk_grid)
             if composited_layers:
                 total_chunks += len(chunk_grid)
-            for sep_layer in separate_layers:
+            for _sep_layer in separate_layers:
                 total_chunks += len(chunk_grid)
 
             current_chunk = 0
@@ -842,17 +793,15 @@ class KMZGenerator:
                         self.progress_callback(
                             int(progress * len(chunk_grid)),
                             total_chunks,
-                            f"Fetching composited tiles ({len(composited_tiles)}/{len(tiles_at_zoom)})..."
+                            f"Fetching composited tiles ({len(composited_tiles)}/{len(tiles_at_zoom)})...",
                         )
 
                     # Compositor automatically handles resampling from nearest available zoom
-                    tile_data = await self.compositor.composite_tile(
-                        x, y, zoom, composited_layers
-                    )
+                    tile_data = await self.compositor.composite_tile(x, y, zoom, composited_layers)
 
                     if tile_data:
                         tile_path = temp_dir / f"tile_composited_{zoom}_{x}_{y}.png"
-                        with open(tile_path, 'wb') as f:
+                        with open(tile_path, "wb") as f:
                             f.write(tile_data)
                         composited_tiles.append((tile_path, x, y, zoom))
 
@@ -864,7 +813,9 @@ class KMZGenerator:
 
                 current_chunk += len(chunk_grid)
                 if self.progress_callback:
-                    self.progress_callback(current_chunk, total_chunks, f"Created {len(composited_chunks)} composited chunks")
+                    self.progress_callback(
+                        current_chunk, total_chunks, f"Created {len(composited_chunks)} composited chunks"
+                    )
 
             # Phase 2: Generate separate layer chunks
             separate_chunks_by_layer = {}
@@ -873,27 +824,25 @@ class KMZGenerator:
                 logger.info(f"Fetching tiles for layer: {layer_name}...")
 
                 # Fetch tiles using shared method (handles opacity=100 and resampling)
-                tiles_by_zoom = await self._fetch_separate_layer_tiles(
-                    extent, zoom, zoom, layer_comp, temp_dir
-                )
+                tiles_by_zoom = await self._fetch_separate_layer_tiles(extent, zoom, zoom, layer_comp, temp_dir)
 
                 # Extract tiles for the single zoom level
                 layer_tiles = tiles_by_zoom.get(zoom, [])
 
                 # Create chunks from tiles using shared helper
                 logger.info(f"Creating {len(chunk_grid)} chunks for layer: {layer_name}...")
-                layer_chunks = self._create_chunks_from_tiles(
-                    layer_tiles, chunk_grid, zoom, temp_dir, layer_name
-                )
+                layer_chunks = self._create_chunks_from_tiles(layer_tiles, chunk_grid, zoom, temp_dir, layer_name)
 
                 separate_chunks_by_layer[layer_name] = layer_chunks
 
                 current_chunk += len(chunk_grid)
                 if self.progress_callback:
-                    self.progress_callback(current_chunk, total_chunks, f"Created {len(layer_chunks)} chunks for {layer_name}")
+                    self.progress_callback(
+                        current_chunk, total_chunks, f"Created {len(layer_chunks)} chunks for {layer_name}"
+                    )
 
             # Phase 3: Create KML
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.kml', delete=False) as kml_file:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".kml", delete=False) as kml_file:
                 kml_temp_path = Path(kml_file.name)
 
             # Add chunks to KML
@@ -908,22 +857,14 @@ class KMZGenerator:
                 layer_name = layer_comp.layer_config.name
                 if layer_name in separate_chunks_by_layer:
                     self._add_separate_layer_chunks(
-                        layer_name,
-                        separate_chunks_by_layer[layer_name],
-                        zoom,
-                        layer_comp.opacity
+                        layer_name, separate_chunks_by_layer[layer_name], zoom, layer_comp.opacity
                     )
 
             # Save KML
             self.kml.save(str(kml_temp_path))
 
             # Phase 4: Create KMZ archive
-            self._create_kmz_archive_chunks(
-                kml_temp_path,
-                composited_chunks,
-                separate_chunks_by_layer,
-                zoom
-            )
+            self._create_kmz_archive_chunks(kml_temp_path, composited_chunks, separate_chunks_by_layer, zoom)
 
             logger.info(f"Created web-compatible KMZ file: {self.output_path}")
             return self.output_path
@@ -933,12 +874,7 @@ class KMZGenerator:
             if kml_temp_path and kml_temp_path.exists():
                 kml_temp_path.unlink()
 
-    def _add_composited_chunks(
-        self,
-        chunks: List[Dict],
-        zoom: int,
-        parent_folder=None
-    ):
+    def _add_composited_chunks(self, chunks: list[dict], zoom: int, parent_folder=None):
         """
         Add composited tile chunks to KML (web compatible mode).
 
@@ -955,23 +891,21 @@ class KMZGenerator:
         folder = kml_or_folder.newfolder(name=folder_name)
 
         for chunk in chunks:
-            chunk_x = chunk['chunk_x']
-            chunk_y = chunk['chunk_y']
-            bounds = chunk['bounds']
+            chunk_x = chunk["chunk_x"]
+            chunk_y = chunk["chunk_y"]
+            bounds = chunk["bounds"]
 
-            ground = folder.newgroundoverlay(
-                name=f"Chunk {zoom}/{chunk_x}/{chunk_y}"
-            )
+            ground = folder.newgroundoverlay(name=f"Chunk {zoom}/{chunk_x}/{chunk_y}")
 
             # Set icon path (relative to KMZ root)
             icon_path = f"files/chunks/composited/{zoom}_{chunk_x}_{chunk_y}.png"
             ground.icon.href = icon_path
 
             # Set geographic bounds
-            ground.latlonbox.north = bounds['north']
-            ground.latlonbox.south = bounds['south']
-            ground.latlonbox.east = bounds['east']
-            ground.latlonbox.west = bounds['west']
+            ground.latlonbox.north = bounds["north"]
+            ground.latlonbox.south = bounds["south"]
+            ground.latlonbox.east = bounds["east"]
+            ground.latlonbox.west = bounds["west"]
 
             # NO Region/LOD elements in web compatible mode
 
@@ -980,13 +914,7 @@ class KMZGenerator:
 
         logger.info(f"Added {len(chunks)} chunks at zoom {zoom} to KML")
 
-    def _add_separate_layer_chunks(
-        self,
-        layer_name: str,
-        chunks: List[Dict],
-        zoom: int,
-        opacity: int
-    ):
+    def _add_separate_layer_chunks(self, layer_name: str, chunks: list[dict], zoom: int, opacity: int):
         """
         Add separate layer chunks to KML (web compatible mode).
 
@@ -1005,21 +933,19 @@ class KMZGenerator:
         kml_color = f"{alpha_hex}ffffff"
 
         for chunk in chunks:
-            chunk_x = chunk['chunk_x']
-            chunk_y = chunk['chunk_y']
-            bounds = chunk['bounds']
+            chunk_x = chunk["chunk_x"]
+            chunk_y = chunk["chunk_y"]
+            bounds = chunk["bounds"]
 
-            ground = layer_folder.newgroundoverlay(
-                name=f"Chunk {zoom}/{chunk_x}/{chunk_y}"
-            )
+            ground = layer_folder.newgroundoverlay(name=f"Chunk {zoom}/{chunk_x}/{chunk_y}")
 
             icon_path = f"files/chunks/{layer_name}/{zoom}_{chunk_x}_{chunk_y}.png"
             ground.icon.href = icon_path
 
-            ground.latlonbox.north = bounds['north']
-            ground.latlonbox.south = bounds['south']
-            ground.latlonbox.east = bounds['east']
-            ground.latlonbox.west = bounds['west']
+            ground.latlonbox.north = bounds["north"]
+            ground.latlonbox.south = bounds["south"]
+            ground.latlonbox.east = bounds["east"]
+            ground.latlonbox.west = bounds["west"]
 
             ground.color = kml_color
 
@@ -1030,11 +956,7 @@ class KMZGenerator:
         logger.info(f"Added {len(chunks)} chunks for {layer_name} at zoom {zoom} to KML")
 
     def _create_kmz_archive_chunks(
-        self,
-        kml_path: Path,
-        composited_chunks: List[Dict],
-        separate_chunks_by_layer: Dict[str, List[Dict]],
-        zoom: int
+        self, kml_path: Path, composited_chunks: list[dict], separate_chunks_by_layer: dict[str, list[dict]], zoom: int
     ):
         """
         Create KMZ archive with chunk images.
@@ -1047,15 +969,15 @@ class KMZGenerator:
         """
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with zipfile.ZipFile(self.output_path, 'w', zipfile.ZIP_DEFLATED) as kmz:
+        with zipfile.ZipFile(self.output_path, "w", zipfile.ZIP_DEFLATED) as kmz:
             # Add KML
-            kmz.write(kml_path, 'doc.kml')
+            kmz.write(kml_path, "doc.kml")
 
             # Add composited chunks
             for chunk in composited_chunks:
-                chunk_x = chunk['chunk_x']
-                chunk_y = chunk['chunk_y']
-                image_path = chunk['image_path']
+                chunk_x = chunk["chunk_x"]
+                chunk_y = chunk["chunk_y"]
+                image_path = chunk["image_path"]
 
                 arcname = f"files/chunks/composited/{zoom}_{chunk_x}_{chunk_y}.png"
                 kmz.write(image_path, arcname)
@@ -1063,9 +985,9 @@ class KMZGenerator:
             # Add separate layer chunks
             for layer_name, chunks in separate_chunks_by_layer.items():
                 for chunk in chunks:
-                    chunk_x = chunk['chunk_x']
-                    chunk_y = chunk['chunk_y']
-                    image_path = chunk['image_path']
+                    chunk_x = chunk["chunk_x"]
+                    chunk_y = chunk["chunk_y"]
+                    image_path = chunk["image_path"]
 
                     arcname = f"files/chunks/{layer_name}/{zoom}_{chunk_x}_{chunk_y}.png"
                     kmz.write(image_path, arcname)

@@ -1,22 +1,21 @@
 """Tile compositor for preview rendering."""
 
-import asyncio
+import contextlib
 import hashlib
 import io
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional
 
 import aiohttp
 import numpy as np
 import requests
 from PIL import Image
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QStandardPaths, QUrl
+from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QStandardPaths
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestJob, QWebEngineUrlSchemeHandler
 
-from src.models.layer_composition import LayerComposition
 from src.core.config import LayerConfig
+from src.models.layer_composition import LayerComposition
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ class TileCompositor:
 
     def __init__(self):
         """Initialize compositor."""
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
         # Initialize cache directory
         # QStandardPaths.CacheLocation already includes org/app name if set via QCoreApplication
@@ -46,7 +45,7 @@ class TileCompositor:
             Path to cached tile file
         """
         # Hash the URL to create a unique filename
-        url_hash = hashlib.sha256(url.encode('utf-8')).hexdigest()
+        url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
         return self.cache_dir / f"{url_hash}.png"
 
     async def get_session(self) -> aiohttp.ClientSession:
@@ -73,7 +72,7 @@ class TileCompositor:
             # Need to fetch parent tile and upsample
             effective_z = layer_config.max_zoom
             zoom_diff = z - effective_z
-            scale_factor = 2 ** zoom_diff
+            scale_factor = 2**zoom_diff
 
             fetch_x = x >> zoom_diff
             fetch_y = y >> zoom_diff
@@ -108,12 +107,7 @@ class TileCompositor:
         return scaled_image.crop((left, top, right, bottom))
 
     async def _downsample_from_grid(
-        self,
-        base_x: int,
-        base_y: int,
-        source_zoom: int,
-        zoom_diff: int,
-        url_template: str
+        self, base_x: int, base_y: int, source_zoom: int, zoom_diff: int, url_template: str
     ) -> Image.Image:
         """
         Downsample by fetching a grid of higher-zoom tiles.
@@ -128,9 +122,9 @@ class TileCompositor:
         Returns:
             Downsampled 256x256 tile
         """
-        scale = 2 ** zoom_diff
+        scale = 2**zoom_diff
         canvas_size = 256 * scale
-        canvas = Image.new('RGBA', (canvas_size, canvas_size), (0, 0, 0, 0))
+        canvas = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
 
         # Fetch and place tiles in grid
         for dy in range(scale):
@@ -147,8 +141,9 @@ class TileCompositor:
         # Downsample to target size using high-quality Lanczos filter
         return canvas.resize((256, 256), Image.Resampling.LANCZOS)
 
-    def fetch_tile_sync(self, url: str, needs_upsampling: bool = False,
-                        scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0) -> Optional[Image.Image]:
+    def fetch_tile_sync(
+        self, url: str, needs_upsampling: bool = False, scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0
+    ) -> Image.Image | None:
         """
         Fetch a tile synchronously and optionally upsample it.
 
@@ -169,7 +164,7 @@ class TileCompositor:
         # Check cache first
         if cache_path.exists():
             try:
-                tile = Image.open(cache_path).convert('RGBA')
+                tile = Image.open(cache_path).convert("RGBA")
 
                 # Upsample if needed using bilinear interpolation
                 if needs_upsampling:
@@ -184,11 +179,11 @@ class TileCompositor:
         try:
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
-                tile = Image.open(io.BytesIO(response.content)).convert('RGBA')
+                tile = Image.open(io.BytesIO(response.content)).convert("RGBA")
 
                 # Save to cache
                 try:
-                    tile.save(cache_path, format='PNG')
+                    tile.save(cache_path, format="PNG")
                 except Exception as e:
                     logger.warning(f"Error saving tile to cache {cache_path}: {e}")
 
@@ -204,8 +199,9 @@ class TileCompositor:
             logger.warning(f"Error fetching tile {url}: {e}")
             return None
 
-    async def fetch_tile(self, url: str, needs_upsampling: bool = False,
-                         scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0) -> Optional[Image.Image]:
+    async def fetch_tile(
+        self, url: str, needs_upsampling: bool = False, scale_factor: int = 1, offset_x: int = 0, offset_y: int = 0
+    ) -> Image.Image | None:
         """
         Fetch a tile from URL asynchronously and optionally upsample it.
 
@@ -226,7 +222,7 @@ class TileCompositor:
         # Check cache first
         if cache_path.exists():
             try:
-                tile = Image.open(cache_path).convert('RGBA')
+                tile = Image.open(cache_path).convert("RGBA")
 
                 # Upsample if needed using bilinear interpolation
                 if needs_upsampling:
@@ -243,11 +239,11 @@ class TileCompositor:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     data = await response.read()
-                    tile = Image.open(io.BytesIO(data)).convert('RGBA')
+                    tile = Image.open(io.BytesIO(data)).convert("RGBA")
 
                     # Save to cache
                     try:
-                        tile.save(cache_path, format='PNG')
+                        tile.save(cache_path, format="PNG")
                     except Exception as e:
                         logger.warning(f"Error saving tile to cache {cache_path}: {e}")
 
@@ -264,7 +260,7 @@ class TileCompositor:
             return None
 
     @staticmethod
-    def _blend_tile_stack(tiles: List[tuple]) -> bytes:
+    def _blend_tile_stack(tiles: list[tuple]) -> bytes:
         """
         Composite a stack of tiles into a single PNG image.
 
@@ -276,7 +272,7 @@ class TileCompositor:
         Returns:
             PNG image bytes
         """
-        result = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+        result = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
 
         for tile, opacity, blend_mode in tiles:
             # Apply opacity if needed
@@ -284,7 +280,9 @@ class TileCompositor:
                 # Create a copy and modify alpha channel
                 tile_copy = tile.copy()
                 alpha = tile_copy.split()[3]
-                alpha = alpha.point(lambda p: int(p * opacity / 100))
+                # Capture opacity value in closure to avoid B023 warning
+                opacity_factor = opacity / 100
+                alpha = alpha.point(lambda p, factor=opacity_factor: int(p * factor))
                 tile_copy.putalpha(alpha)
                 tile_with_opacity = tile_copy
             else:
@@ -300,19 +298,15 @@ class TileCompositor:
             overlay_alpha = overlay_array[:, :, 3:4]
 
             # Apply blend mode to RGB channels
-            if blend_mode == 'normal':
+            if blend_mode == "normal":
                 blended_rgb = overlay_rgb
-            elif blend_mode == 'multiply':
+            elif blend_mode == "multiply":
                 blended_rgb = base_rgb * overlay_rgb
-            elif blend_mode == 'screen':
+            elif blend_mode == "screen":
                 blended_rgb = 1 - (1 - base_rgb) * (1 - overlay_rgb)
-            elif blend_mode == 'overlay':
+            elif blend_mode == "overlay":
                 mask = base_rgb < 0.5
-                blended_rgb = np.where(
-                    mask,
-                    2 * base_rgb * overlay_rgb,
-                    1 - 2 * (1 - base_rgb) * (1 - overlay_rgb)
-                )
+                blended_rgb = np.where(mask, 2 * base_rgb * overlay_rgb, 1 - 2 * (1 - base_rgb) * (1 - overlay_rgb))
             else:
                 blended_rgb = overlay_rgb
 
@@ -325,11 +319,11 @@ class TileCompositor:
             # Combine and convert back
             result_array = np.dstack([result_rgb, result_alpha])
             result_array = np.clip(result_array * 255, 0, 255).astype(np.uint8)
-            result = Image.fromarray(result_array, mode='RGBA')
+            result = Image.fromarray(result_array, mode="RGBA")
 
         # Convert to PNG bytes
         buffer = io.BytesIO()
-        result.save(buffer, format='PNG')
+        result.save(buffer, format="PNG")
         return buffer.getvalue()
 
     def apply_opacity(self, image: Image.Image, opacity: int) -> Image.Image:
@@ -365,7 +359,7 @@ class TileCompositor:
         Returns:
             Blended image
         """
-        if blend_mode == 'normal':
+        if blend_mode == "normal":
             # Normal alpha compositing
             return Image.alpha_composite(base, overlay)
 
@@ -381,18 +375,16 @@ class TileCompositor:
         overlay_alpha = overlay_array[:, :, 3:4]
 
         # Apply blend mode to RGB channels
-        if blend_mode == 'multiply':
+        if blend_mode == "multiply":
             # Multiply: darker, multiplies color values
             blended_rgb = base_rgb * overlay_rgb
-        elif blend_mode == 'screen':
+        elif blend_mode == "screen":
             # Screen: lighter, inverse of multiply
             blended_rgb = 1 - (1 - base_rgb) * (1 - overlay_rgb)
-        elif blend_mode == 'overlay':
+        elif blend_mode == "overlay":
             # Overlay: multiply if base < 0.5, screen if base >= 0.5
             blended_rgb = np.where(
-                base_rgb < 0.5,
-                2 * base_rgb * overlay_rgb,
-                1 - 2 * (1 - base_rgb) * (1 - overlay_rgb)
+                base_rgb < 0.5, 2 * base_rgb * overlay_rgb, 1 - 2 * (1 - base_rgb) * (1 - overlay_rgb)
             )
         else:
             # Unknown mode, fall back to normal
@@ -410,15 +402,9 @@ class TileCompositor:
 
         # Convert back to uint8 and create PIL image
         result_array = np.clip(result_array * 255, 0, 255).astype(np.uint8)
-        return Image.fromarray(result_array, mode='RGBA')
+        return Image.fromarray(result_array, mode="RGBA")
 
-    async def composite_tile(
-        self,
-        x: int,
-        y: int,
-        z: int,
-        layer_compositions: List[LayerComposition]
-    ) -> Optional[bytes]:
+    async def composite_tile(self, x: int, y: int, z: int, layer_compositions: list[LayerComposition]) -> bytes | None:
         """
         Composite a tile from multiple layers with per-layer LOD support and automatic resampling.
 
@@ -441,9 +427,9 @@ class TileCompositor:
         """
         if not layer_compositions:
             # Return transparent tile
-            img = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+            img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
             buffer = io.BytesIO()
-            img.save(buffer, format='PNG')
+            img.save(buffer, format="PNG")
             return buffer.getvalue()
 
         # Fetch all tiles
@@ -472,26 +458,30 @@ class TileCompositor:
             elif source_zoom < z:
                 # Upsample from lower zoom
                 zoom_diff = z - source_zoom
-                scale_factor = 2 ** zoom_diff
+                scale_factor = 2**zoom_diff
                 fetch_x = x >> zoom_diff
                 fetch_y = y >> zoom_diff
                 offset_x = x - (fetch_x << zoom_diff)
                 offset_y = y - (fetch_y << zoom_diff)
                 url = composition.layer_config.url_template.format(x=fetch_x, y=fetch_y, z=source_zoom)
-                tile = await self.fetch_tile(url, needs_upsampling=True, scale_factor=scale_factor, offset_x=offset_x, offset_y=offset_y)
+                tile = await self.fetch_tile(
+                    url, needs_upsampling=True, scale_factor=scale_factor, offset_x=offset_x, offset_y=offset_y
+                )
             else:
                 # Downsample from higher zoom
                 zoom_diff = source_zoom - z
                 base_x = x << zoom_diff
                 base_y = y << zoom_diff
-                tile = await self._downsample_from_grid(base_x, base_y, source_zoom, zoom_diff, composition.layer_config.url_template)
+                tile = await self._downsample_from_grid(
+                    base_x, base_y, source_zoom, zoom_diff, composition.layer_config.url_template
+                )
 
             # Add tile to composition
             if tile:
                 tiles.append((tile, composition.opacity, composition.blend_mode))
             else:
                 # Use transparent tile if fetch failed
-                tiles.append((Image.new('RGBA', (256, 256), (0, 0, 0, 0)), composition.opacity, composition.blend_mode))
+                tiles.append((Image.new("RGBA", (256, 256), (0, 0, 0, 0)), composition.opacity, composition.blend_mode))
 
         # Composite tiles using shared blending logic
         return self._blend_tile_stack(tiles)
@@ -513,7 +503,7 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
         """Initialize handler."""
         super().__init__(parent)
         self.compositor = TileCompositor()
-        self.layer_compositions: List[LayerComposition] = []
+        self.layer_compositions: list[LayerComposition] = []
         # Thread pool for non-blocking tile composition
         self.executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="TileLoader")
         # Keep buffers alive - store them with weak references to requests
@@ -521,7 +511,7 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
         # Version counter to track composition changes - helps avoid processing stale requests
         self.composition_version = 0
 
-    def set_layer_compositions(self, compositions: List[LayerComposition]):
+    def set_layer_compositions(self, compositions: list[LayerComposition]):
         """
         Set the layer compositions for preview tiles.
 
@@ -532,7 +522,7 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
         # Increment version to invalidate pending requests
         self.composition_version += 1
 
-    def _composite_tile_sync(self, x: int, y: int, z: int, compositions: List[LayerComposition]) -> Optional[bytes]:
+    def _composite_tile_sync(self, x: int, y: int, z: int, compositions: list[LayerComposition]) -> bytes | None:
         """
         Synchronously composite a tile (for use in background threads).
 
@@ -550,9 +540,9 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
         try:
             if not compositions:
                 # Return transparent tile
-                img = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+                img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
                 buffer = io.BytesIO()
-                img.save(buffer, format='PNG')
+                img.save(buffer, format="PNG")
                 return buffer.getvalue()
 
             # Fetch all tiles synchronously
@@ -571,8 +561,9 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                     continue
 
                 # Get effective coordinates for this layer
-                fetch_x, fetch_y, fetch_z, needs_upsampling, scale_factor, offset_x, offset_y = \
+                fetch_x, fetch_y, fetch_z, needs_upsampling, scale_factor, offset_x, offset_y = (
                     self.compositor._get_effective_tile_coords(x, y, z, composition.layer_config)
+                )
 
                 if fetch_x is None:
                     # Layer doesn't support this zoom (below min), skip it
@@ -588,7 +579,9 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                     tiles.append((tile, composition.opacity, composition.blend_mode))
                 else:
                     # Use transparent tile if fetch failed
-                    tiles.append((Image.new('RGBA', (256, 256), (0, 0, 0, 0)), composition.opacity, composition.blend_mode))
+                    tiles.append(
+                        (Image.new("RGBA", (256, 256), (0, 0, 0, 0)), composition.opacity, composition.blend_mode)
+                    )
 
             # Composite tiles using shared blending logic
             return TileCompositor._blend_tile_stack(tiles)
@@ -597,7 +590,15 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
             logger.exception(f"Error compositing tile {z}/{x}/{y}: {e}")
             return None
 
-    def _handle_request_in_background(self, request: QWebEngineUrlRequestJob, x: int, y: int, z: int, compositions: List[LayerComposition], version: int):
+    def _handle_request_in_background(
+        self,
+        request: QWebEngineUrlRequestJob,
+        x: int,
+        y: int,
+        z: int,
+        compositions: list[LayerComposition],
+        version: int,
+    ):
         """
         Handle the request in a background thread.
 
@@ -612,11 +613,11 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
         try:
             # Check if this request is stale (composition has changed)
             if version != self.composition_version:
-                logger.debug(f"Skipping stale tile request {z}/{x}/{y} (version {version} != {self.composition_version})")
-                try:
+                logger.debug(
+                    f"Skipping stale tile request {z}/{x}/{y} (version {version} != {self.composition_version})"
+                )
+                with contextlib.suppress(RuntimeError):
                     request.fail(QWebEngineUrlRequestJob.Error.RequestAborted)
-                except RuntimeError:
-                    pass
                 return
 
             # Composite tile
@@ -639,7 +640,7 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
                     self.active_buffers = dict(items[-100:])
 
                 try:
-                    request.reply(b'image/png', buffer)
+                    request.reply(b"image/png", buffer)
                 except RuntimeError:
                     # Request was already deleted (timeout or cancelled)
                     logger.debug(f"Request for tile {z}/{x}/{y} was already deleted")
@@ -652,13 +653,11 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
 
         except Exception as e:
             logger.exception(f"Error compositing tile {z}/{x}/{y}: {e}")
-            try:
-                request.fail(QWebEngineUrlRequestJob.Error.RequestFailed)
-            except RuntimeError:
+            with contextlib.suppress(RuntimeError):
                 # Request was already deleted
-                pass
+                request.fail(QWebEngineUrlRequestJob.Error.RequestFailed)
 
-    def requestStarted(self, a0: Optional[QWebEngineUrlRequestJob]) -> None:
+    def requestStarted(self, a0: QWebEngineUrlRequestJob | None) -> None:
         """
         Handle URL request - returns immediately, work happens in background.
 
@@ -679,19 +678,19 @@ class PreviewTileSchemeHandler(QWebEngineUrlSchemeHandler):
             path = qurl.path()
 
             # Remove leading slash
-            if path.startswith('/'):
+            if path.startswith("/"):
                 path = path[1:]
 
             # Remove .png extension (and any query string if present)
-            if path.endswith('.png'):
+            if path.endswith(".png"):
                 path = path[:-4]
 
             # Handle query strings that might have been included in path
-            if '?' in path:
-                path = path.split('?')[0]
+            if "?" in path:
+                path = path.split("?")[0]
 
             # Split into z/x/y parts
-            parts = path.split('/')
+            parts = path.split("/")
 
             if len(parts) != 3:
                 logger.warning(f"Invalid preview URL format: {url} (path: {qurl.path()}, parts: {parts})")

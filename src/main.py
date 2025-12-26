@@ -15,10 +15,10 @@ def setup_logging(verbose: bool = False):
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),
-        ]
+        ],
     )
 
 
@@ -26,6 +26,7 @@ def cmd_download(args):
     """Handle download subcommand."""
     setup_logging(args.verbose)
     from src.cli import run_cli
+
     return run_cli(args.config)
 
 
@@ -63,33 +64,20 @@ def _set_app_metadata(app):
 def main():
     """Main application entry point."""
     parser = argparse.ArgumentParser(
-        description='Google Earth Tile Generator - Generate KMZ files from WMTS tiles',
-        epilog='Run without arguments to launch GUI mode.'
+        description="Google Earth Tile Generator - Generate KMZ files from WMTS tiles",
+        epilog="Run without arguments to launch GUI mode.",
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Download subcommand
-    download_parser = subparsers.add_parser(
-        'download',
-        help='Download tiles and generate KMZ file'
-    )
-    download_parser.add_argument(
-        'config',
-        help='YAML configuration file'
-    )
-    download_parser.add_argument(
-        '-v', '--verbose',
-        action='store_true',
-        help='Enable verbose logging'
-    )
+    download_parser = subparsers.add_parser("download", help="Download tiles and generate KMZ file")
+    download_parser.add_argument("config", help="YAML configuration file")
+    download_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
     download_parser.set_defaults(func=cmd_download)
 
     # List layers subcommand
-    list_parser = subparsers.add_parser(
-        'list-layers',
-        help='List available WMTS layers'
-    )
+    list_parser = subparsers.add_parser("list-layers", help="List available WMTS layers")
     list_parser.set_defaults(func=cmd_list_layers)
 
     args = parser.parse_args()
@@ -97,17 +85,16 @@ def main():
     # If no subcommand provided, launch GUI
     if args.command is None:
         import signal
-        from PyQt6.QtCore import QTimer, QByteArray
-        from PyQt6.QtWidgets import QApplication
+
+        from PyQt6.QtCore import QByteArray, QTimer
         from PyQt6.QtWebEngineCore import QWebEngineUrlScheme
+        from PyQt6.QtWidgets import QApplication
+
         from src.gui.main_window import MainWindow
 
         # Register custom URL scheme BEFORE creating QApplication
-        scheme = QWebEngineUrlScheme(QByteArray(b'preview'))
-        scheme.setFlags(
-            QWebEngineUrlScheme.Flag.LocalScheme |
-            QWebEngineUrlScheme.Flag.LocalAccessAllowed
-        )
+        scheme = QWebEngineUrlScheme(QByteArray(b"preview"))
+        scheme.setFlags(QWebEngineUrlScheme.Flag.LocalScheme | QWebEngineUrlScheme.Flag.LocalAccessAllowed)
         QWebEngineUrlScheme.registerScheme(scheme)
 
         # Create QApplication for GUI
@@ -138,5 +125,5 @@ def main():
         return args.func(args)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
