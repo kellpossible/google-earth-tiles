@@ -1,6 +1,6 @@
 # Google Earth Tile Generator
 
-A tile map generator with GUI and CLI modes for creating KMZ and MBTiles files from WMTS tile sources. Currently primarily designed for Japan GSI map data.
+A tile map generator with GUI and CLI modes for creating raster map files from WMTS tile sources. Currently primarily designed for Japan GSI map data.
 
 ## Features
 
