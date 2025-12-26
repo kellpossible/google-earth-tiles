@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import simplekml
+from PIL import Image
 
 from src.core.config import LayerConfig
 from src.core.tile_calculator import TileCalculator
@@ -116,13 +117,15 @@ class KMZGenerator:
         """
         Fetch tiles for a single separate layer, reusing compositor logic.
 
-        This method leverages the existing TileCompositor to handle all
-        fetching and resampling logic, avoiding code duplication.
+        This method leverages the existing TileCompositor to handle all fetching
+        and resampling logic, avoiding code duplication. Resampling is automatically
+        supported - the compositor will fetch from the nearest available zoom when
+        the exact zoom is not available (see LayerComposition.get_available_zooms()).
 
         Args:
             extent: Geographic extent
-            min_zoom: Minimum zoom level
-            max_zoom: Maximum zoom level
+            min_zoom: Minimum zoom level to generate
+            max_zoom: Maximum zoom level to generate
             layer_composition: Layer composition for this layer
             temp_dir: Temporary directory for tile storage
 
@@ -133,9 +136,9 @@ class KMZGenerator:
         tiles_by_zoom = {}
 
         # Create a temporary composition with opacity=100 to avoid pixel-level opacity
-        # The compositor will handle all fetching and resampling logic
+        # Opacity will be applied in KML only for separate layers
         temp_composition = layer_composition.copy()
-        temp_composition.opacity = 100  # No pixel-level opacity for separate layers
+        temp_composition.opacity = 100
 
         for zoom_level in range(min_zoom, max_zoom + 1):
             logger.info(f"Fetching {layer_name} tiles at zoom {zoom_level}...")
@@ -153,12 +156,10 @@ class KMZGenerator:
                     pass
 
                 # Use compositor to fetch and resample tile
-                # Compositor handles all LOD logic (get_available_zooms, find_best_source_zoom, resampling)
+                # Compositor automatically handles resampling from nearest available zoom
                 tile_data = await self.compositor.composite_tile(
                     x, y, zoom_level,
-                    [temp_composition],  # Single-layer "composition"
-                    output_min_zoom=min_zoom,
-                    output_max_zoom=max_zoom
+                    [temp_composition]  # Single-layer "composition"
                 )
 
                 if tile_data:
@@ -258,7 +259,8 @@ class KMZGenerator:
         extent: Extent,
         min_zoom: int,
         max_zoom: int,
-        layer_compositions: List[LayerComposition]
+        layer_compositions: List[LayerComposition],
+        web_compatible: bool = False
     ) -> Path:
         """
         Create KMZ file with composited and/or separate layers.
@@ -272,6 +274,7 @@ class KMZGenerator:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of LayerComposition objects
+            web_compatible: Enable Google Earth Web compatibility mode (default False)
 
         Returns:
             Path to created KMZ file
@@ -281,6 +284,39 @@ class KMZGenerator:
 
         if min_zoom > max_zoom:
             raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
+
+        # Branch to web compatible generation if enabled
+        if web_compatible:
+            # Calculate optimal zoom for web compatible mode
+            composited_layers, separate_layers = self._separate_layers_by_export_mode(layer_compositions)
+            effective_layer_count = (1 if composited_layers else 0) + len(separate_layers)
+
+            calculated_max_zoom = TileCalculator.find_max_web_compatible_zoom(
+                extent.min_lon, extent.min_lat,
+                extent.max_lon, extent.max_lat,
+                effective_layer_count,
+                max_chunks_per_layer=500
+            )
+
+            # Determine actual zoom to use
+            if calculated_max_zoom < min_zoom:
+                raise ValueError(
+                    f"Web compatible mode cannot support min_zoom={min_zoom}. "
+                    f"Maximum supportable zoom for this extent and layer count is {calculated_max_zoom}. "
+                    f"Please reduce min_zoom or decrease extent/layer count."
+                )
+
+            actual_zoom = min(max_zoom, calculated_max_zoom)
+
+            if actual_zoom < max_zoom:
+                logger.warning(
+                    f"Web compatible mode: Requested max_zoom={max_zoom} exceeds limit. "
+                    f"Using zoom {actual_zoom} instead (calculated max: {calculated_max_zoom})."
+                )
+
+            logger.info(f"Web compatible mode: Using zoom {actual_zoom} (range: {min_zoom}-{max_zoom})")
+
+            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions)
 
         # Separate layers by export mode (handles single-layer special case)
         composited_layers, separate_layers = self._separate_layers_by_export_mode(layer_compositions)
@@ -339,9 +375,7 @@ class KMZGenerator:
                             )
 
                         tile_data = await self.compositor.composite_tile(
-                            x, y, zoom_level, composited_layers,
-                            output_min_zoom=min_zoom,
-                            output_max_zoom=max_zoom
+                            x, y, zoom_level, composited_layers
                         )
 
                         if tile_data:
@@ -442,7 +476,8 @@ class KMZGenerator:
         extent: Extent,
         min_zoom: int,
         max_zoom: int,
-        layer_compositions: List[LayerComposition]
+        layer_compositions: List[LayerComposition],
+        web_compatible: bool = False
     ) -> Path:
         """
         Create KMZ file with composited tiles and optional LOD (synchronous wrapper).
@@ -452,6 +487,7 @@ class KMZGenerator:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of LayerComposition objects
+            web_compatible: Enable Google Earth Web compatibility mode (default False)
 
         Returns:
             Path to created KMZ file
@@ -464,7 +500,7 @@ class KMZGenerator:
             asyncio.set_event_loop(loop)
 
         return loop.run_until_complete(
-            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions)
+            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible)
         )
 
     def _add_composited_tiles(
@@ -614,3 +650,425 @@ class KMZGenerator:
                         separate_count += 1
 
         logger.info(f"KMZ archive created with {composited_count} composited tiles and {separate_count} separate layer tiles")
+
+    def _create_chunks_from_tiles(
+        self,
+        tiles: List[Tuple[Path, int, int, int]],
+        chunk_grid: List[Dict],
+        zoom: int,
+        temp_dir: Path,
+        output_prefix: str
+    ) -> List[Dict]:
+        """
+        Create chunks by grouping and merging tiles.
+
+        Args:
+            tiles: List of (tile_path, x, y, z) for tiles already saved to disk
+            chunk_grid: Grid of chunks with tile coordinates and bounds
+            zoom: Zoom level
+            temp_dir: Temporary directory for chunk storage
+            output_prefix: Prefix for chunk filenames (e.g., "composited" or layer name)
+
+        Returns:
+            List of chunk dicts with chunk_x, chunk_y, bounds, image_path
+        """
+        chunks = []
+
+        # Create a map of (x, y) -> tile_path for quick lookup
+        tile_map = {(x, y): path for path, x, y, z in tiles}
+
+        for chunk_info in chunk_grid:
+            chunk_tiles = []
+
+            # Collect tiles for this chunk
+            for x, y in chunk_info['tiles']:
+                if (x, y) in tile_map:
+                    tile_path = tile_map[(x, y)]
+                    chunk_tiles.append((tile_path, x, y, zoom))
+
+            if chunk_tiles:
+                # Merge tiles into chunk
+                chunk_image = self.merge_tiles_to_chunk(chunk_tiles, zoom)
+
+                # Save chunk
+                chunk_x = chunk_info['chunk_x']
+                chunk_y = chunk_info['chunk_y']
+                chunk_path = temp_dir / f"chunk_{output_prefix}_{zoom}_{chunk_x}_{chunk_y}.png"
+                chunk_image.save(chunk_path, format='PNG')
+                chunk_image.close()
+
+                chunks.append({
+                    'chunk_x': chunk_x,
+                    'chunk_y': chunk_y,
+                    'bounds': chunk_info['bounds'],
+                    'image_path': chunk_path
+                })
+
+                # Clean up individual tile files
+                for tile_path, _, _, _ in chunk_tiles:
+                    if tile_path.exists():
+                        tile_path.unlink()
+
+        return chunks
+
+    def merge_tiles_to_chunk(
+        self,
+        tiles: List[Tuple[Path, int, int, int]],
+        zoom: int,
+        chunk_size: int = 8
+    ) -> Image.Image:
+        """
+        Merge 256x256 tiles into a single chunk image.
+
+        Args:
+            tiles: List of (tile_path, x, y, z) tuples
+            zoom: Zoom level (for coordinate calculation)
+            chunk_size: Number of tiles per chunk dimension (default 8 for 2048x2048)
+
+        Returns:
+            PIL Image of merged chunk (up to chunk_size*256 x chunk_size*256)
+        """
+        if not tiles:
+            raise ValueError("Cannot merge empty tile list")
+
+        # Find tile coordinate bounds
+        x_coords = [x for _, x, y, z in tiles]
+        y_coords = [y for _, x, y, z in tiles]
+        x_min, y_min = min(x_coords), min(y_coords)
+        x_max, y_max = max(x_coords), max(y_coords)
+
+        # Create canvas (may be smaller than chunk_size*256 for partial chunks at edges)
+        width = (x_max - x_min + 1) * 256
+        height = (y_max - y_min + 1) * 256
+        canvas = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+
+        # Place each tile
+        for tile_path, x, y, z in tiles:
+            if not tile_path.exists():
+                logger.warning(f"Tile not found: {tile_path}")
+                continue
+
+            try:
+                tile_img = Image.open(tile_path)
+
+                # Sanity check: ensure tile is 256x256 as expected
+                if tile_img.size != (256, 256):
+                    logger.error(
+                        f"Tile size mismatch: expected 256x256, got {tile_img.size} for {tile_path}"
+                    )
+                    tile_img.close()
+                    continue
+
+                # Calculate position in canvas
+                paste_x = (x - x_min) * 256
+                paste_y = (y - y_min) * 256
+
+                canvas.paste(tile_img, (paste_x, paste_y))
+                tile_img.close()
+            except Exception as e:
+                logger.warning(f"Error loading tile {tile_path}: {e}")
+
+        return canvas
+
+    async def _create_kmz_web_compatible(
+        self,
+        extent: Extent,
+        zoom: int,
+        layer_compositions: List[LayerComposition]
+    ) -> Path:
+        """
+        Create web-compatible KMZ with merged chunks.
+
+        Args:
+            extent: Geographic extent
+            zoom: Single zoom level (min_zoom == max_zoom)
+            layer_compositions: Layer compositions
+
+        Returns:
+            Path to created KMZ file
+        """
+        # Separate layers
+        composited_layers, separate_layers = self._separate_layers_by_export_mode(
+            layer_compositions
+        )
+
+        # Set document metadata
+        self.kml.document.name = f"GSI Tiles - Zoom {zoom} (Web Compatible)"
+        self.kml.document.description = (
+            f"Generated: {datetime.now().isoformat()}\n"
+            f"Optimized for Google Earth Web"
+        )
+
+        temp_dir = Path(tempfile.mkdtemp())
+        kml_temp_path = None
+
+        try:
+            # Get all tiles at this zoom
+            tiles_at_zoom = TileCalculator.get_tiles_in_extent(
+                extent.min_lon, extent.min_lat,
+                extent.max_lon, extent.max_lat,
+                zoom
+            )
+
+            # Calculate chunk grid (8x8 tiles per chunk = 2048x2048 pixels)
+            chunk_grid = TileCalculator.get_chunk_grid(tiles_at_zoom, zoom, chunk_size=8)
+
+            logger.info(f"Web compatible mode: {len(chunk_grid)} chunks at zoom {zoom}")
+
+            # Calculate progress
+            total_chunks = len(chunk_grid)
+            if composited_layers:
+                total_chunks += len(chunk_grid)
+            for sep_layer in separate_layers:
+                total_chunks += len(chunk_grid)
+
+            current_chunk = 0
+
+            # Phase 1: Generate composited chunks
+            composited_chunks = []
+            if composited_layers:
+                logger.info("Fetching composited tiles...")
+
+                # Get all tiles in extent at this zoom
+                tiles_at_zoom = TileCalculator.get_tiles_in_extent(
+                    extent.min_lon, extent.min_lat, extent.max_lon, extent.max_lat, zoom
+                )
+
+                # Fetch all composited tiles
+                composited_tiles = []
+                for x, y in tiles_at_zoom:
+                    if self.progress_callback:
+                        progress = len(composited_tiles) / len(tiles_at_zoom) if tiles_at_zoom else 0
+                        self.progress_callback(
+                            int(progress * len(chunk_grid)),
+                            total_chunks,
+                            f"Fetching composited tiles ({len(composited_tiles)}/{len(tiles_at_zoom)})..."
+                        )
+
+                    # Compositor automatically handles resampling from nearest available zoom
+                    tile_data = await self.compositor.composite_tile(
+                        x, y, zoom, composited_layers
+                    )
+
+                    if tile_data:
+                        tile_path = temp_dir / f"tile_composited_{zoom}_{x}_{y}.png"
+                        with open(tile_path, 'wb') as f:
+                            f.write(tile_data)
+                        composited_tiles.append((tile_path, x, y, zoom))
+
+                # Create chunks from tiles using shared helper
+                logger.info(f"Creating {len(chunk_grid)} composited chunks...")
+                composited_chunks = self._create_chunks_from_tiles(
+                    composited_tiles, chunk_grid, zoom, temp_dir, "composited"
+                )
+
+                current_chunk += len(chunk_grid)
+                if self.progress_callback:
+                    self.progress_callback(current_chunk, total_chunks, f"Created {len(composited_chunks)} composited chunks")
+
+            # Phase 2: Generate separate layer chunks
+            separate_chunks_by_layer = {}
+            for layer_comp in separate_layers:
+                layer_name = layer_comp.layer_config.name
+                logger.info(f"Fetching tiles for layer: {layer_name}...")
+
+                # Fetch tiles using shared method (handles opacity=100 and resampling)
+                tiles_by_zoom = await self._fetch_separate_layer_tiles(
+                    extent, zoom, zoom, layer_comp, temp_dir
+                )
+
+                # Extract tiles for the single zoom level
+                layer_tiles = tiles_by_zoom.get(zoom, [])
+
+                # Create chunks from tiles using shared helper
+                logger.info(f"Creating {len(chunk_grid)} chunks for layer: {layer_name}...")
+                layer_chunks = self._create_chunks_from_tiles(
+                    layer_tiles, chunk_grid, zoom, temp_dir, layer_name
+                )
+
+                separate_chunks_by_layer[layer_name] = layer_chunks
+
+                current_chunk += len(chunk_grid)
+                if self.progress_callback:
+                    self.progress_callback(current_chunk, total_chunks, f"Created {len(layer_chunks)} chunks for {layer_name}")
+
+            # Phase 3: Create KML
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.kml', delete=False) as kml_file:
+                kml_temp_path = Path(kml_file.name)
+
+            # Add chunks to KML
+            if composited_chunks:
+                base_folder = None
+                if separate_layers:
+                    base_folder = self.kml.newfolder(name="Layer: Base")
+
+                self._add_composited_chunks(composited_chunks, zoom, base_folder)
+
+            for layer_comp in separate_layers:
+                layer_name = layer_comp.layer_config.name
+                if layer_name in separate_chunks_by_layer:
+                    self._add_separate_layer_chunks(
+                        layer_name,
+                        separate_chunks_by_layer[layer_name],
+                        zoom,
+                        layer_comp.opacity
+                    )
+
+            # Save KML
+            self.kml.save(str(kml_temp_path))
+
+            # Phase 4: Create KMZ archive
+            self._create_kmz_archive_chunks(
+                kml_temp_path,
+                composited_chunks,
+                separate_chunks_by_layer,
+                zoom
+            )
+
+            logger.info(f"Created web-compatible KMZ file: {self.output_path}")
+            return self.output_path
+
+        finally:
+            await self.compositor.close()
+            if kml_temp_path and kml_temp_path.exists():
+                kml_temp_path.unlink()
+
+    def _add_composited_chunks(
+        self,
+        chunks: List[Dict],
+        zoom: int,
+        parent_folder=None
+    ):
+        """
+        Add composited tile chunks to KML (web compatible mode).
+
+        Args:
+            chunks: List of chunk dicts with 'chunk_x', 'chunk_y', 'bounds', 'image_path'
+            zoom: Zoom level
+            parent_folder: Optional parent folder
+        """
+        if not chunks:
+            return
+
+        folder_name = f"Composited Tiles (Zoom {zoom})"
+        kml_or_folder = parent_folder if parent_folder else self.kml
+        folder = kml_or_folder.newfolder(name=folder_name)
+
+        for chunk in chunks:
+            chunk_x = chunk['chunk_x']
+            chunk_y = chunk['chunk_y']
+            bounds = chunk['bounds']
+
+            ground = folder.newgroundoverlay(
+                name=f"Chunk {zoom}/{chunk_x}/{chunk_y}"
+            )
+
+            # Set icon path (relative to KMZ root)
+            icon_path = f"files/chunks/composited/{zoom}_{chunk_x}_{chunk_y}.png"
+            ground.icon.href = icon_path
+
+            # Set geographic bounds
+            ground.latlonbox.north = bounds['north']
+            ground.latlonbox.south = bounds['south']
+            ground.latlonbox.east = bounds['east']
+            ground.latlonbox.west = bounds['west']
+
+            # NO Region/LOD elements in web compatible mode
+
+            # Set draw order
+            ground.draworder = zoom
+
+        logger.info(f"Added {len(chunks)} chunks at zoom {zoom} to KML")
+
+    def _add_separate_layer_chunks(
+        self,
+        layer_name: str,
+        chunks: List[Dict],
+        zoom: int,
+        opacity: int
+    ):
+        """
+        Add separate layer chunks to KML (web compatible mode).
+
+        Args:
+            layer_name: Layer name
+            chunks: List of chunk dicts
+            zoom: Zoom level
+            opacity: Layer opacity (0-100)
+        """
+        # Create folder for this layer
+        layer_folder = self.kml.newfolder(name=f"Layer: {layer_name}")
+
+        # Convert opacity to KML color (alpha in hex)
+        alpha_value = int((opacity / 100.0) * 255)
+        alpha_hex = f"{alpha_value:02x}"
+        kml_color = f"{alpha_hex}ffffff"
+
+        for chunk in chunks:
+            chunk_x = chunk['chunk_x']
+            chunk_y = chunk['chunk_y']
+            bounds = chunk['bounds']
+
+            ground = layer_folder.newgroundoverlay(
+                name=f"Chunk {zoom}/{chunk_x}/{chunk_y}"
+            )
+
+            icon_path = f"files/chunks/{layer_name}/{zoom}_{chunk_x}_{chunk_y}.png"
+            ground.icon.href = icon_path
+
+            ground.latlonbox.north = bounds['north']
+            ground.latlonbox.south = bounds['south']
+            ground.latlonbox.east = bounds['east']
+            ground.latlonbox.west = bounds['west']
+
+            ground.color = kml_color
+
+            # NO Region/LOD elements
+
+            ground.draworder = zoom
+
+        logger.info(f"Added {len(chunks)} chunks for {layer_name} at zoom {zoom} to KML")
+
+    def _create_kmz_archive_chunks(
+        self,
+        kml_path: Path,
+        composited_chunks: List[Dict],
+        separate_chunks_by_layer: Dict[str, List[Dict]],
+        zoom: int
+    ):
+        """
+        Create KMZ archive with chunk images.
+
+        Args:
+            kml_path: Path to KML file
+            composited_chunks: List of composited chunk dicts
+            separate_chunks_by_layer: Dict of layer_name -> chunk list
+            zoom: Zoom level
+        """
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(self.output_path, 'w', zipfile.ZIP_DEFLATED) as kmz:
+            # Add KML
+            kmz.write(kml_path, 'doc.kml')
+
+            # Add composited chunks
+            for chunk in composited_chunks:
+                chunk_x = chunk['chunk_x']
+                chunk_y = chunk['chunk_y']
+                image_path = chunk['image_path']
+
+                arcname = f"files/chunks/composited/{zoom}_{chunk_x}_{chunk_y}.png"
+                kmz.write(image_path, arcname)
+
+            # Add separate layer chunks
+            for layer_name, chunks in separate_chunks_by_layer.items():
+                for chunk in chunks:
+                    chunk_x = chunk['chunk_x']
+                    chunk_y = chunk['chunk_y']
+                    image_path = chunk['image_path']
+
+                    arcname = f"files/chunks/{layer_name}/{zoom}_{chunk_x}_{chunk_y}.png"
+                    kmz.write(image_path, arcname)
+
+        total_chunks = len(composited_chunks) + sum(len(chunks) for chunks in separate_chunks_by_layer.values())
+        logger.info(f"KMZ archive created with {total_chunks} chunks")

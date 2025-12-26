@@ -85,7 +85,8 @@ class ExportWorker(QThread):
                 self.request.extent,
                 min_zoom,
                 max_zoom,
-                self.request.layer_compositions
+                self.request.layer_compositions,
+                self.request.web_compatible
             )
 
             self.finished.emit(result_path)

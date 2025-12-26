@@ -35,29 +35,55 @@ class LayerComposition:
         if self.lod_mode not in valid_lod_modes:
             raise ValueError(f"LOD mode must be one of {valid_lod_modes}, got {self.lod_mode}")
 
-    def get_available_zooms(self, output_min_zoom: int, output_max_zoom: int) -> Set[int]:
+    def get_available_zooms(self) -> Set[int]:
         """
-        Get zoom levels available for this layer given the output range.
+        Get zoom levels available for this layer.
 
-        Args:
-            output_min_zoom: Minimum zoom level in the output range
-            output_max_zoom: Maximum zoom level in the output range
+        IMPORTANT RESAMPLING ARCHITECTURE:
+        ===================================
+        This method returns ALL zoom levels that the layer can provide based on:
+        1. Layer's native zoom range (min_zoom to max_zoom from layer config)
+        2. LOD configuration (all_zooms or select_zooms with selected_zooms set)
+
+        This method does NOT restrict by output zoom range. This is intentional to support
+        comprehensive resampling capabilities.
+
+        RESAMPLING BEHAVIOR:
+        -------------------
+        When generating tiles at any target zoom level, the compositor can resample from
+        the nearest available source zoom, even if that source zoom is outside the output
+        range. The find_best_source_zoom() method finds the nearest available zoom with
+        preference for HIGHER zoom levels when equidistant (quality preservation).
+
+        Example scenarios that require resampling:
+        - Layer max zoom 15, generating zoom 16 → upsample from zoom 15
+        - Layer select_zooms [15,16], generating zoom 14 → downsample from zoom 15 (nearest)
+        - Layer select_zooms [10,11], generating zoom 14 → upsample from zoom 11 (nearest)
+        - Layer select_zooms [12,14], generating zoom 13 → downsample from zoom 14 (equidistant, prefer higher)
+
+        LOD select_zooms DESELECTION:
+        ----------------------------
+        When a layer has lod_mode='select_zooms' and certain zoom levels are NOT selected:
+        - Those deselected zooms are NOT available as source zooms
+        - When generating at a deselected zoom, the nearest selected zoom is used
+        - Resampling (up or down) occurs automatically to reach the target zoom
+        - Preference is given to higher zoom when distances are equal (better quality)
 
         Returns:
-            Set of zoom levels available for this layer
+            Set of zoom levels available for this layer as source zooms
         """
         if self.lod_mode == "all_zooms":
-            # Use all zooms within layer's capability range and output range
+            # Use all zooms within layer's native capability range
             return set(range(
-                max(self.layer_config.min_zoom, output_min_zoom),
-                min(self.layer_config.max_zoom, output_max_zoom) + 1
+                self.layer_config.min_zoom,
+                self.layer_config.max_zoom + 1
             ))
         else:
-            # Use only selected zooms, filtered to layer's capability and output range
+            # Use only selected zooms, filtered to layer's native capability
+            # No output range restriction - allow resampling to any target zoom
             return {
                 z for z in self.selected_zooms
                 if self.layer_config.min_zoom <= z <= self.layer_config.max_zoom
-                and output_min_zoom <= z <= output_max_zoom
             }
 
     def find_best_source_zoom(self, target_zoom: int, available_zooms: Set[int]) -> int:

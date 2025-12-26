@@ -675,6 +675,19 @@ class SettingsPanel(QWidget):
         path_layout.addWidget(self.browse_button)
 
         output_layout.addLayout(path_layout)
+
+        # Web compatible checkbox
+        self.web_compatible_checkbox = QCheckBox("Google Earth Web Compatible Mode")
+        self.web_compatible_checkbox.setToolTip(
+            "Generate KMZ optimized for Google Earth Web:\n"
+            "• Single zoom level (automatically calculated)\n"
+            "• Merged tiles into 2048×2048 chunks\n"
+            "• No Region/LOD elements\n"
+            "• Limited to ~500 chunks per layer"
+        )
+        self.web_compatible_checkbox.stateChanged.connect(self._on_web_compatible_changed)
+        output_layout.addWidget(self.web_compatible_checkbox)
+
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
 
@@ -894,6 +907,41 @@ class SettingsPanel(QWidget):
         """Handle zoom range slider change."""
         min_zoom, max_zoom = value
 
+        # Web compatible mode requires single zoom level
+        if self.web_compatible_checkbox.isChecked():
+            if min_zoom != max_zoom:
+                # Force to single zoom at max_zoom (user is likely dragging the slider)
+                self.zoom_range_widget.set_value(max_zoom, max_zoom)
+                return
+
+            # Validate against calculated maximum zoom for web compatibility
+            if self.current_extent:
+                layer_compositions = self.get_layer_compositions()
+                if layer_compositions:
+                    separate_count = sum(1 for comp in layer_compositions if comp.export_mode == "separate")
+                    composited_count = len(layer_compositions) - separate_count
+                    effective_layer_count = max(1, composited_count) + separate_count
+
+                    calculated_max_zoom = TileCalculator.find_max_web_compatible_zoom(
+                        self.current_extent.min_lon,
+                        self.current_extent.min_lat,
+                        self.current_extent.max_lon,
+                        self.current_extent.max_lat,
+                        effective_layer_count,
+                        max_chunks_per_layer=500
+                    )
+
+                    # If user tries to go above calculated max, clamp it
+                    if max_zoom > calculated_max_zoom:
+                        self.zoom_range_widget.set_value(calculated_max_zoom, calculated_max_zoom)
+                        QMessageBox.warning(
+                            self,
+                            "Web Compatible Mode",
+                            f"Maximum zoom for this extent is {calculated_max_zoom} to stay within "
+                            f"Google Earth Web's image limits (~500 chunks per layer)."
+                        )
+                        return
+
         # Update display label
         if min_zoom == max_zoom:
             self.zoom_display_label.setText(f"Zoom: {max_zoom}")
@@ -932,6 +980,65 @@ class SettingsPanel(QWidget):
         _, max_zoom = self.zoom_range_widget.value()
         self.sync_preview_zoom_requested.emit(max_zoom)
 
+    def _on_web_compatible_changed(self, state):
+        """Handle web compatible mode checkbox change."""
+        is_checked = self.web_compatible_checkbox.isChecked()
+
+        if is_checked and self.current_extent:
+            # Calculate optimal zoom based on extent and enabled layer compositions
+            layer_compositions = self.get_layer_compositions()
+            if layer_compositions:
+                # Count effective layers (composited + each separate layer)
+                separate_count = sum(1 for comp in layer_compositions if comp.export_mode == "separate")
+                composited_count = len(layer_compositions) - separate_count
+                effective_layer_count = max(1, composited_count) + separate_count
+
+                # Find max zoom that stays under chunk limit
+                calculated_max_zoom = TileCalculator.find_max_web_compatible_zoom(
+                    self.current_extent.min_lon,
+                    self.current_extent.min_lat,
+                    self.current_extent.max_lon,
+                    self.current_extent.max_lat,
+                    effective_layer_count,
+                    max_chunks_per_layer=500
+                )
+
+                # Get user's current zoom range
+                user_min_zoom, user_max_zoom = self.zoom_range_widget.value()
+
+                # Determine the zoom to use (min of calculated max and user's max)
+                target_zoom = min(calculated_max_zoom, user_max_zoom)
+
+                # Show error if calculated max < user's min
+                if calculated_max_zoom < user_min_zoom:
+                    QMessageBox.critical(
+                        self,
+                        "Web Compatible Mode Error",
+                        f"ERROR: Extent too large for web compatible mode.\n\n"
+                        f"Calculated maximum zoom ({calculated_max_zoom}) is below your minimum zoom ({user_min_zoom}).\n\n"
+                        f"Please reduce the extent area or disable web compatible mode."
+                    )
+                    # Uncheck the checkbox
+                    self.web_compatible_checkbox.setChecked(False)
+                    return
+
+                # Show warning if we had to reduce the zoom
+                if calculated_max_zoom < user_max_zoom:
+                    QMessageBox.warning(
+                        self,
+                        "Web Compatible Mode",
+                        f"WARNING: Calculated maximum zoom ({calculated_max_zoom}) is lower than "
+                        f"your specified max zoom ({user_max_zoom}).\n\n"
+                        f"Using zoom {calculated_max_zoom} to stay within Google Earth Web's image limits.\n"
+                        f"You can adjust the zoom level using the slider."
+                    )
+
+                # Set to single zoom at target level (user can still adjust with slider)
+                self.zoom_range_widget.set_value(target_zoom, target_zoom)
+
+        # Update estimates to reflect web compatible mode
+        self._update_estimates()
+        self._emit_state_changed()
 
     def _update_zoom_range(self):
         """Update zoom range based on enabled layers."""
@@ -1021,33 +1128,66 @@ class SettingsPanel(QWidget):
             return
 
         min_zoom, max_zoom = self.zoom_range_widget.value()
+        is_web_compatible = self.web_compatible_checkbox.isChecked()
 
-        # Calculate for all zoom levels in range
-        total_tiles = 0
-        total_size_mb = 0
+        if is_web_compatible:
+            # Web compatible mode: calculate chunks instead of tiles
+            layer_compositions = self.get_layer_compositions()
+            if not layer_compositions:
+                self.tile_count_label.setText("Chunks: -")
+                self.size_estimate_label.setText("Size: -")
+                return
 
-        for zoom in range(min_zoom, max_zoom + 1):
-            tile_count = TileCalculator.estimate_tile_count(
+            # Count effective layers for calculation
+            separate_count = sum(1 for comp in layer_compositions if comp.export_mode == "separate")
+            composited_count = len(layer_compositions) - separate_count
+            effective_layer_count = max(1, composited_count) + separate_count
+
+            # Calculate chunks at the single zoom level
+            chunk_count = TileCalculator.calculate_chunks_at_zoom(
                 self.current_extent.min_lon,
                 self.current_extent.min_lat,
                 self.current_extent.max_lon,
                 self.current_extent.max_lat,
-                zoom
+                max_zoom,
+                chunk_size=8
             )
-            total_tiles += tile_count
 
-            for layer in enabled_layers:
-                size_mb = TileCalculator.estimate_download_size(tile_count, layer.extension)
-                total_size_mb += size_mb
+            # Estimate size: 2048x2048 chunks are ~64x larger than 256x256 tiles
+            # But we have fewer of them (1 chunk = 64 tiles)
+            # Rough estimate: chunk file ~400KB for PNG (2048x2048 with compression)
+            avg_chunk_size_kb = 400
+            total_size_mb = (chunk_count * effective_layer_count * avg_chunk_size_kb) / 1024
 
-        # Display differently for single vs multi-zoom
-        zoom_levels = max_zoom - min_zoom + 1
-        if zoom_levels == 1:
-            self.tile_count_label.setText(f"Tiles: {total_tiles:,}")
+            self.tile_count_label.setText(f"Chunks: {chunk_count:,} ({chunk_count * effective_layer_count:,} total)")
+            self.size_estimate_label.setText(f"Size: ~{total_size_mb:.1f} MB (web compatible)")
         else:
-            self.tile_count_label.setText(f"Tiles: {total_tiles:,} ({zoom_levels} zoom levels)")
+            # Regular mode: calculate tiles
+            total_tiles = 0
+            total_size_mb = 0
 
-        self.size_estimate_label.setText(f"Size: ~{total_size_mb:.1f} MB")
+            for zoom in range(min_zoom, max_zoom + 1):
+                tile_count = TileCalculator.estimate_tile_count(
+                    self.current_extent.min_lon,
+                    self.current_extent.min_lat,
+                    self.current_extent.max_lon,
+                    self.current_extent.max_lat,
+                    zoom
+                )
+                total_tiles += tile_count
+
+                for layer in enabled_layers:
+                    size_mb = TileCalculator.estimate_download_size(tile_count, layer.extension)
+                    total_size_mb += size_mb
+
+            # Display differently for single vs multi-zoom
+            zoom_levels = max_zoom - min_zoom + 1
+            if zoom_levels == 1:
+                self.tile_count_label.setText(f"Tiles: {total_tiles:,}")
+            else:
+                self.tile_count_label.setText(f"Tiles: {total_tiles:,} ({zoom_levels} zoom levels)")
+
+            self.size_estimate_label.setText(f"Size: ~{total_size_mb:.1f} MB")
 
     def _update_generate_button(self):
         """Update generate button enabled state."""
@@ -1066,6 +1206,7 @@ class SettingsPanel(QWidget):
         layer_compositions = self.get_layer_compositions()
         min_zoom, max_zoom = self.zoom_range_widget.value()
         output_path = self.output_path_edit.text()
+        web_compatible = self.web_compatible_checkbox.isChecked()
 
         # Create generation request
         request = GenerationRequest(
@@ -1073,7 +1214,8 @@ class SettingsPanel(QWidget):
             min_zoom=min_zoom,
             max_zoom=max_zoom,
             extent=self.current_extent,
-            output_path=Path(output_path)
+            output_path=Path(output_path),
+            web_compatible=web_compatible
         )
 
         self.generate_requested.emit(request)
@@ -1123,7 +1265,8 @@ class SettingsPanel(QWidget):
             'min_zoom': min_zoom,
             'max_zoom': max_zoom,
             'output': self.output_path_edit.text(),
-            'layers': [comp.to_dict() for comp in layer_compositions]
+            'layers': [comp.to_dict() for comp in layer_compositions],
+            'web_compatible': self.web_compatible_checkbox.isChecked()
         }
 
         return state
@@ -1168,6 +1311,10 @@ class SettingsPanel(QWidget):
             self.south_edit.setText(f"{extent.min_lat:.6f}")
             self.east_edit.setText(f"{extent.max_lon:.6f}")
             self.west_edit.setText(f"{extent.min_lon:.6f}")
+
+            # 6. Set web compatible mode
+            web_compatible = state.get('web_compatible', False)
+            self.web_compatible_checkbox.setChecked(web_compatible)
 
         finally:
             self._suppress_state_changes = False

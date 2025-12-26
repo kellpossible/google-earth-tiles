@@ -417,20 +417,24 @@ class TileCompositor:
         x: int,
         y: int,
         z: int,
-        layer_compositions: List[LayerComposition],
-        output_min_zoom: Optional[int] = None,
-        output_max_zoom: Optional[int] = None
+        layer_compositions: List[LayerComposition]
     ) -> Optional[bytes]:
         """
-        Composite a tile from multiple layers with per-layer LOD support.
+        Composite a tile from multiple layers with per-layer LOD support and automatic resampling.
+
+        RESAMPLING ARCHITECTURE:
+        -----------------------
+        This method supports comprehensive resampling to generate tiles at any zoom level:
+        - Each layer's available zooms are determined by its native range and LOD configuration
+        - If a layer doesn't have tiles at the target zoom, the nearest available zoom is used
+        - Automatic upsampling (from lower zoom) or downsampling (from higher zoom) occurs as needed
+        - See LayerComposition.get_available_zooms() for detailed resampling documentation
 
         Args:
             x: Tile X coordinate
             y: Tile Y coordinate
-            z: Zoom level
+            z: Zoom level (target zoom to generate)
             layer_compositions: List of LayerComposition objects
-            output_min_zoom: Minimum zoom level in output range (for LOD)
-            output_max_zoom: Maximum zoom level in output range (for LOD)
 
         Returns:
             PNG image bytes or None if composition failed
@@ -442,12 +446,6 @@ class TileCompositor:
             img.save(buffer, format='PNG')
             return buffer.getvalue()
 
-        # Determine output zoom range if not provided
-        if output_min_zoom is None:
-            output_min_zoom = min(comp.layer_config.min_zoom for comp in layer_compositions)
-        if output_max_zoom is None:
-            output_max_zoom = max(comp.layer_config.max_zoom for comp in layer_compositions)
-
         # Fetch all tiles
         tiles = []
         for composition in layer_compositions:
@@ -456,20 +454,14 @@ class TileCompositor:
                 logger.debug(f"Skipping {composition.layer_config.name} (layer disabled)")
                 continue
 
-            # Get available zooms for this layer based on its LOD settings
-            available_zooms = composition.get_available_zooms(output_min_zoom, output_max_zoom)
+            # Get available zooms for this layer (no output range restriction - enables full resampling)
+            available_zooms = composition.get_available_zooms()
 
             if not available_zooms:
                 logger.debug(f"Skipping {composition.layer_config.name} at zoom {z} (no available zooms)")
                 continue
 
-            # For select_zooms mode, only include layer at explicitly selected zoom levels
-            # (no resampling from nearby zooms)
-            if composition.lod_mode == "select_zooms" and z not in available_zooms:
-                logger.debug(f"Skipping {composition.layer_config.name} at zoom {z} (zoom not in selected_zooms)")
-                continue
-
-            # Find best source zoom for this layer
+            # Find best source zoom for this layer (may require resampling)
             source_zoom = composition.find_best_source_zoom(z, available_zooms)
 
             # Calculate fetch coordinates and determine if resampling is needed

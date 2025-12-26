@@ -17,6 +17,7 @@ class GenerationRequest:
     max_zoom: int
     extent: Extent
     output_path: Path
+    web_compatible: bool = False
 
     def __post_init__(self):
         """Validate the generation request."""
@@ -31,6 +32,9 @@ class GenerationRequest:
 
         if not self.layer_compositions:
             raise ValueError("layer_compositions cannot be empty")
+
+        # Note: web_compatible mode will calculate optimal zoom at generation time
+        # No validation needed here - zoom range can be specified and best zoom selected automatically
 
         # Convert output_path to Path if it's a string
         if isinstance(self.output_path, str):
@@ -53,5 +57,6 @@ class GenerationRequest:
             min_zoom=self.min_zoom,
             max_zoom=self.max_zoom,
             extent=self.extent.copy(),
-            output_path=Path(self.output_path)
+            output_path=Path(self.output_path),
+            web_compatible=self.web_compatible
         )

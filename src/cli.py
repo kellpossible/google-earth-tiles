@@ -139,6 +139,15 @@ def validate_config(config: Dict) -> None:
     if min_zoom > max_zoom:
         raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
 
+    # Validate web_compatible mode
+    if 'web_compatible' in config:
+        web_compatible = config['web_compatible']
+        if not isinstance(web_compatible, bool):
+            raise ValueError("web_compatible must be a boolean")
+
+        # Note: web_compatible mode will automatically calculate optimal zoom within range
+        # No need to enforce min_zoom == max_zoom here
+
 
 def run_cli(config_path: str) -> int:
     """
@@ -188,8 +197,11 @@ def run_cli(config_path: str) -> int:
         # Parse zoom configuration
         min_zoom = config['min_zoom']
         max_zoom = config['max_zoom']
+        web_compatible = config.get('web_compatible', False)
 
-        if min_zoom < max_zoom:
+        if web_compatible:
+            logger.info(f"Web compatible mode enabled: single zoom level {max_zoom}")
+        elif min_zoom < max_zoom:
             logger.info(f"Multi-zoom enabled: zoom {min_zoom} to {max_zoom}")
         else:
             logger.info(f"Single zoom level: {max_zoom}")
@@ -239,7 +251,8 @@ def run_cli(config_path: str) -> int:
             extent,
             min_zoom,
             max_zoom,
-            layer_compositions
+            layer_compositions,
+            web_compatible
         )
 
         logger.info(f"✓ KMZ file created successfully: {result_path}")

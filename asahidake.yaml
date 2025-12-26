@@ -5,6 +5,7 @@ extent:
   max_lat: 43.73315055548809
 min_zoom: 12
 max_zoom: 16
+web_compatible: true
 output: /Users/luke/programming/google-earth-tile-generator/asahidake.kmz
 layers:
 - name: std
