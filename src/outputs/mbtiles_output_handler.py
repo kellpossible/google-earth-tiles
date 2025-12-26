@@ -144,6 +144,10 @@ class MBTilesOutputHandler:
         Returns:
             Path to created MBTiles file
         """
+        # Remove existing file if it exists
+        if output_path.exists():
+            output_path.unlink()
+
         generator = MBTilesGenerator(output_path, progress_callback)
 
         metadata_config = {
@@ -213,6 +217,10 @@ class MBTilesOutputHandler:
                 "attribution": options.get("metadata_attribution", ""),
                 "type": options.get("metadata_type", "overlay"),
             }
+
+            # Remove existing file if it exists
+            if layer_output.exists():
+                layer_output.unlink()
 
             # Wrap progress callback for multi-layer tracking (bind loop variables)
             def make_layer_progress(layer_idx, layer_name):

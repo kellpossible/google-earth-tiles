@@ -12,9 +12,12 @@ outputs:
   jpeg_quality: 80
   export_mode: composite
   metadata_name: Tile Export
-  metadata_description: ''
+  metadata_description: Asahidake
   metadata_attribution: ''
   metadata_type: baselayer
+- type: kmz
+  path: /Users/luke/programming/google-earth-tile-generator/asahidake.kmz
+  web_compatible: false
 layers:
 - name: std
   opacity: 100
