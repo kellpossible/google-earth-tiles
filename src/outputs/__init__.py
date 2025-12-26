@@ -2,13 +2,14 @@
 
 from src.models.output_handler import OutputHandler
 from src.outputs.kmz_output_handler import KMZOutputHandler
+from src.outputs.mbtiles_output_handler import MBTilesOutputHandler
 
 # Registry of available output handlers
 OUTPUT_HANDLERS: dict[str, type[OutputHandler]] = {
     "kmz": KMZOutputHandler,
+    "mbtiles": MBTilesOutputHandler,
     # Future formats can be added here:
     # "geotiff": GeoTIFFOutputHandler,
-    # "mbtiles": MBTilesOutputHandler,
     # "png": PNGOutputHandler,
 }
 
@@ -52,4 +53,5 @@ __all__ = [
     "get_output_handler",
     "get_available_output_types",
     "KMZOutputHandler",
+    "MBTilesOutputHandler",
 ]

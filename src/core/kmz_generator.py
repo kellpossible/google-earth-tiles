@@ -10,15 +10,15 @@ from pathlib import Path
 import simplekml
 from PIL import Image
 
+from src.core.base_tile_generator import BaseTileGenerator
 from src.core.tile_calculator import CHUNK_SIZE, TileCalculator
-from src.gui.tile_compositor import TileCompositor
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
 
 logger = logging.getLogger(__name__)
 
 
-class KMZGenerator:
+class KMZGenerator(BaseTileGenerator):
     """Generator for KMZ files with composited layers."""
 
     def __init__(self, output_path: Path, progress_callback=None, enable_cache: bool = True):
@@ -30,10 +30,8 @@ class KMZGenerator:
             progress_callback: Optional callback(current, total, message) for progress updates
             enable_cache: Whether to use tile caching (default: True)
         """
-        self.output_path = Path(output_path)
+        super().__init__(output_path, progress_callback, enable_cache)
         self.kml = simplekml.Kml()
-        self.compositor = TileCompositor(enable_cache=enable_cache)
-        self.progress_callback = progress_callback
 
     @staticmethod
     def calculate_lod_pixels(zoom: int, min_zoom: int, max_zoom: int) -> tuple[int, int]:
@@ -69,106 +67,6 @@ class KMZGenerator:
             return (-1, 256)
 
         return (80, 256)
-
-    @staticmethod
-    def _separate_layers_by_export_mode(
-        layer_compositions: list[LayerComposition],
-    ) -> tuple[list[LayerComposition], list[LayerComposition]]:
-        """
-        Separate layers into composite and separate groups.
-
-        When only one layer is enabled, it's automatically treated as separate
-        to use KML-level opacity instead of pixel-level compositing.
-
-        Args:
-            layer_compositions: All layer compositions
-
-        Returns:
-            Tuple of (composited_layers, separate_layers)
-        """
-        composited = []
-        separate = []
-
-        enabled_layers = [comp for comp in layer_compositions if comp.enabled]
-
-        # Special case: if only one layer, always treat as separate
-        # (use KML-level opacity instead of pixel-level compositing)
-        if len(enabled_layers) == 1:
-            return [], enabled_layers
-
-        # Multi-layer case: respect export_mode setting
-        for comp in enabled_layers:
-            if comp.export_mode == "separate":
-                separate.append(comp)
-            else:
-                composited.append(comp)
-
-        return composited, separate
-
-    async def _fetch_separate_layer_tiles(
-        self, extent: Extent, min_zoom: int, max_zoom: int, layer_composition: LayerComposition, temp_dir: Path
-    ) -> dict[int, list[tuple[Path, int, int, int]]]:
-        """
-        Fetch tiles for a single separate layer, reusing compositor logic.
-
-        This method leverages the existing TileCompositor to handle all fetching
-        and resampling logic, avoiding code duplication. Resampling is automatically
-        supported - the compositor will fetch from the nearest available zoom when
-        the exact zoom is not available (see LayerComposition.get_available_zooms()).
-
-        Args:
-            extent: Geographic extent
-            min_zoom: Minimum zoom level to generate
-            max_zoom: Maximum zoom level to generate
-            layer_composition: Layer composition for this layer
-            temp_dir: Temporary directory for tile storage
-
-        Returns:
-            Dictionary mapping zoom level to list of (tile_path, x, y, z) tuples
-        """
-        layer_name = layer_composition.layer_config.name
-        tiles_by_zoom = {}
-
-        # Create a temporary composition with opacity=100 to avoid pixel-level opacity
-        # Opacity will be applied in KML only for separate layers
-        temp_composition = layer_composition.copy()
-        temp_composition.opacity = 100
-
-        for zoom_level in range(min_zoom, max_zoom + 1):
-            logger.info(f"Fetching {layer_name} tiles at zoom {zoom_level}...")
-
-            # Get tiles in extent
-            tiles_at_zoom = TileCalculator.get_tiles_in_extent(
-                extent.min_lon, extent.min_lat, extent.max_lon, extent.max_lat, zoom_level
-            )
-
-            fetched_tiles = []
-            for x, y in tiles_at_zoom:
-                # Update progress if callback exists
-                if self.progress_callback:
-                    # Progress tracking will be handled by the main loop
-                    pass
-
-                # Use compositor to fetch and resample tile
-                # Compositor automatically handles resampling from nearest available zoom
-                tile_data = await self.compositor.composite_tile(
-                    x,
-                    y,
-                    zoom_level,
-                    [temp_composition],  # Single-layer "composition"
-                )
-
-                if tile_data:
-                    # Save to temp file with layer name prefix
-                    tile_path = temp_dir / f"{layer_name}_{zoom_level}_{x}_{y}.png"
-                    with open(tile_path, "wb") as f:
-                        f.write(tile_data)
-                    fetched_tiles.append((tile_path, x, y, zoom_level))
-
-            tiles_by_zoom[zoom_level] = fetched_tiles
-            logger.info(f"Fetched {len(fetched_tiles)} tiles for {layer_name} at zoom {zoom_level}")
-
-        return tiles_by_zoom
 
     def _add_separate_layer_tiles(
         self,
@@ -280,7 +178,7 @@ class KMZGenerator:
         # Branch to web compatible generation if enabled
         if web_compatible:
             # Calculate optimal zoom for web compatible mode
-            composited_layers, separate_layers = self._separate_layers_by_export_mode(layer_compositions)
+            composited_layers, separate_layers = self.separate_layers_by_export_mode(layer_compositions)
             effective_layer_count = (1 if composited_layers else 0) + len(separate_layers)
 
             calculated_max_zoom = TileCalculator.find_max_web_compatible_zoom(
@@ -317,7 +215,7 @@ class KMZGenerator:
             return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions, include_timestamp)
 
         # Separate layers by export mode (handles single-layer special case)
-        composited_layers, separate_layers = self._separate_layers_by_export_mode(layer_compositions)
+        composited_layers, separate_layers = self.separate_layers_by_export_mode(layer_compositions)
 
         if not composited_layers and not separate_layers:
             raise ValueError("No enabled layers to export")
@@ -395,7 +293,7 @@ class KMZGenerator:
                 logger.info(f"Fetching separate layer: {layer_comp.layer_config.name}...")
 
                 # Update progress before fetching (tiles will update within the method)
-                tiles_by_zoom = await self._fetch_separate_layer_tiles(extent, min_zoom, max_zoom, layer_comp, temp_dir)
+                tiles_by_zoom = await self.fetch_tiles_for_layer(extent, min_zoom, max_zoom, layer_comp, temp_dir)
 
                 # Update progress after layer completion
                 for tiles in tiles_by_zoom.values():
@@ -483,14 +381,8 @@ class KMZGenerator:
         Returns:
             Path to created KMZ file
         """
-        # Run async version
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(
+        # Run async version (Python 3.14 compatible)
+        return asyncio.run(
             self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp)
         )
 
@@ -759,7 +651,7 @@ class KMZGenerator:
             Path to created KMZ file
         """
         # Separate layers
-        composited_layers, separate_layers = self._separate_layers_by_export_mode(layer_compositions)
+        composited_layers, separate_layers = self.separate_layers_by_export_mode(layer_compositions)
 
         # Set document metadata
         self.kml.document.name = f"GSI Tiles - Zoom {zoom} (Web Compatible)"
@@ -843,7 +735,7 @@ class KMZGenerator:
                 logger.info(f"Fetching tiles for layer: {layer_name}...")
 
                 # Fetch tiles using shared method (handles opacity=100 and resampling)
-                tiles_by_zoom = await self._fetch_separate_layer_tiles(extent, zoom, zoom, layer_comp, temp_dir)
+                tiles_by_zoom = await self.fetch_tiles_for_layer(extent, zoom, zoom, layer_comp, temp_dir)
 
                 # Extract tiles for the single zoom level
                 layer_tiles = tiles_by_zoom.get(zoom, [])

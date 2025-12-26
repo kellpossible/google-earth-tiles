@@ -142,13 +142,18 @@ def validate_config(config: dict, layer_registry: dict | None = None) -> None:
     if not isinstance(config["outputs"], list) or len(config["outputs"]) == 0:
         raise ValueError("outputs must be a non-empty list")
 
+    # Import here to avoid circular dependency
+    from src.outputs import OUTPUT_HANDLERS
+
+    valid_types = list(OUTPUT_HANDLERS.keys())
+
     for output in config["outputs"]:
         if not isinstance(output, dict):
             raise ValueError("Each output must be a dictionary")
         if "path" not in output:
             raise ValueError("Each output must have a 'path' field")
-        if "type" in output and output["type"] not in ["kmz"]:
-            raise ValueError(f"Invalid output type: {output['type']}. Valid types: kmz")
+        if "type" in output and output["type"] not in valid_types:
+            raise ValueError(f"Invalid output type: {output['type']}. Valid types: {', '.join(valid_types)}")
         if "web_compatible" in output and not isinstance(output["web_compatible"], bool):
             raise ValueError("output web_compatible must be a boolean")
 

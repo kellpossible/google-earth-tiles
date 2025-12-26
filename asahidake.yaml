@@ -6,9 +6,15 @@ extent:
 min_zoom: 12
 max_zoom: 16
 outputs:
-  - type: kmz
-    path: /Users/luke/programming/google-earth-tile-generator/asahidake.kmz
-    web_compatible: false
+- type: mbtiles
+  path: /Users/luke/programming/google-earth-tile-generator/asahidake.mbtiles
+  image_format: png
+  jpeg_quality: 80
+  export_mode: composite
+  metadata_name: Tile Export
+  metadata_description: ''
+  metadata_attribution: ''
+  metadata_type: baselayer
 layers:
 - name: std
   opacity: 100
