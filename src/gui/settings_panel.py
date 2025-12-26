@@ -659,6 +659,27 @@ class SettingsPanel(QWidget):
         zoom_group.setLayout(zoom_layout)
         layout.addWidget(zoom_group)
 
+        # Extent display
+        extent_group = QGroupBox("Selected Extent")
+        extent_layout = QFormLayout()
+
+        self.north_edit = QLineEdit()
+        self.north_edit.setReadOnly(True)
+        self.south_edit = QLineEdit()
+        self.south_edit.setReadOnly(True)
+        self.east_edit = QLineEdit()
+        self.east_edit.setReadOnly(True)
+        self.west_edit = QLineEdit()
+        self.west_edit.setReadOnly(True)
+
+        extent_layout.addRow("North:", self.north_edit)
+        extent_layout.addRow("South:", self.south_edit)
+        extent_layout.addRow("East:", self.east_edit)
+        extent_layout.addRow("West:", self.west_edit)
+
+        extent_group.setLayout(extent_layout)
+        layout.addWidget(extent_group)
+
         # Output path
         output_group = QGroupBox("Output")
         output_layout = QVBoxLayout()
@@ -687,31 +708,7 @@ class SettingsPanel(QWidget):
         self.web_compatible_checkbox.stateChanged.connect(self._on_web_compatible_changed)
         output_layout.addWidget(self.web_compatible_checkbox)
 
-        output_group.setLayout(output_layout)
-        layout.addWidget(output_group)
-
-        # Extent display
-        extent_group = QGroupBox("Selected Extent")
-        extent_layout = QFormLayout()
-
-        self.north_edit = QLineEdit()
-        self.north_edit.setReadOnly(True)
-        self.south_edit = QLineEdit()
-        self.south_edit.setReadOnly(True)
-        self.east_edit = QLineEdit()
-        self.east_edit.setReadOnly(True)
-        self.west_edit = QLineEdit()
-        self.west_edit.setReadOnly(True)
-
-        extent_layout.addRow("North:", self.north_edit)
-        extent_layout.addRow("South:", self.south_edit)
-        extent_layout.addRow("East:", self.east_edit)
-        extent_layout.addRow("West:", self.west_edit)
-
-        extent_group.setLayout(extent_layout)
-        layout.addWidget(extent_group)
-
-        # Estimates
+        # Size estimates subgroup
         estimate_group = QGroupBox("Estimates")
         estimate_layout = QVBoxLayout()
 
@@ -722,7 +719,10 @@ class SettingsPanel(QWidget):
         estimate_layout.addWidget(self.size_estimate_label)
 
         estimate_group.setLayout(estimate_layout)
-        layout.addWidget(estimate_group)
+        output_layout.addWidget(estimate_group)
+
+        output_group.setLayout(output_layout)
+        layout.addWidget(output_group)
 
         # Generate button
         self.generate_button = QPushButton("Generate KMZ")
