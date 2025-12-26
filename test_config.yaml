@@ -6,7 +6,10 @@ extent:
 
 zoom: 14
 
-output: output/test-tiles.kmz
+outputs:
+  - type: kmz
+    path: output/test-tiles.kmz
+    web_compatible: false
 
 layers:
   - name: std

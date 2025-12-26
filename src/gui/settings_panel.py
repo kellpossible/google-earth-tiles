@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QFormLayout,
     QFrame,
     QGroupBox,
@@ -28,11 +27,12 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.config import CATEGORIES, DEFAULT_ZOOM, LAYERS, LayerConfig
-from src.core.tile_calculator import CHUNK_SIZE, TileCalculator
+from src.gui.output_item_widget import OutputItemWidget
 from src.gui.zoom_range_widget import ZoomRangeWidget
 from src.models.extent import Extent
 from src.models.generation_request import GenerationRequest
 from src.models.layer_composition import LayerComposition
+from src.models.output_config import OutputConfig
 
 # Blend modes supported by KML (Google Earth)
 BLEND_MODES = [
@@ -591,6 +591,7 @@ class SettingsPanel(QWidget):
         super().__init__()
         self.current_extent: Extent | None = None
         self.layer_widgets: list[LayerItemWidget] = []
+        self.output_widgets: list[OutputItemWidget] = []
         self.current_preview_zoom: int | None = None
         self._suppress_state_changes = False
         self.custom_layer_registry: dict = {}  # Custom layers from layer_sources in config
@@ -680,52 +681,27 @@ class SettingsPanel(QWidget):
         extent_group.setLayout(extent_layout)
         layout.addWidget(extent_group)
 
-        # Output path
+        # Output section (supports multiple outputs)
         output_group = QGroupBox("Output")
         output_layout = QVBoxLayout()
 
-        path_layout = QHBoxLayout()
-        self.output_path_edit = QLineEdit()
-        self.output_path_edit.setPlaceholderText("Select output KMZ file...")
-        self.output_path_edit.textChanged.connect(self._emit_state_changed)
-        self.browse_button = QPushButton("Browse...")
-        self.browse_button.clicked.connect(self._browse_output_path)
+        # Add Output button
+        self.add_output_button = QPushButton("Add Output")
+        self.add_output_button.clicked.connect(self._on_add_output_clicked)
+        output_layout.addWidget(self.add_output_button)
 
-        path_layout.addWidget(self.output_path_edit)
-        path_layout.addWidget(self.browse_button)
-
-        output_layout.addLayout(path_layout)
-
-        # Web compatible checkbox
-        self.web_compatible_checkbox = QCheckBox("Google Earth Web Compatible Mode")
-        self.web_compatible_checkbox.setToolTip(
-            "Generate KMZ optimized for Google Earth Web:\n"
-            "• Single zoom level (automatically calculated)\n"
-            "• Merged tiles into 2048×2048 chunks\n"
-            "• No Region/LOD elements\n"
-            "• Limited to ~500 chunks per layer"
-        )
-        self.web_compatible_checkbox.stateChanged.connect(self._on_web_compatible_changed)
-        output_layout.addWidget(self.web_compatible_checkbox)
-
-        # Size estimates subgroup
-        estimate_group = QGroupBox("Estimates")
-        estimate_layout = QVBoxLayout()
-
-        self.tile_count_label = QLabel("Tiles: -")
-        self.size_estimate_label = QLabel("Size: -")
-
-        estimate_layout.addWidget(self.tile_count_label)
-        estimate_layout.addWidget(self.size_estimate_label)
-
-        estimate_group.setLayout(estimate_layout)
-        output_layout.addWidget(estimate_group)
+        # Container for output widgets
+        self.outputs_container = QWidget()
+        self.outputs_layout = QVBoxLayout()
+        self.outputs_layout.setContentsMargins(0, 0, 0, 0)
+        self.outputs_container.setLayout(self.outputs_layout)
+        output_layout.addWidget(self.outputs_container)
 
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
 
-        # Generate button
-        self.generate_button = QPushButton("Generate KMZ")
+        # Export button (renamed from Generate KMZ)
+        self.generate_button = QPushButton("Export")
         self.generate_button.setEnabled(False)
         self.generate_button.clicked.connect(self._on_generate_clicked)
         self.generate_button.setMinimumHeight(40)
@@ -751,6 +727,14 @@ class SettingsPanel(QWidget):
         # Start with standard layer by default
         self.add_layer(LAYERS["std"])
         self._update_zoom_range()
+
+        # Start with one empty output pre-added
+        default_output = OutputConfig(
+            output_type="kmz",
+            output_path=Path(""),
+            options={"web_compatible": False}
+        )
+        self._add_output_widget(default_output)
 
     def _on_layer_changed(self):
         """Handle layer list change (add/remove/reorder) - updates zoom limits."""
@@ -916,40 +900,6 @@ class SettingsPanel(QWidget):
 
         min_zoom, max_zoom = value
 
-        # Web compatible mode requires single zoom level
-        if self.web_compatible_checkbox.isChecked():
-            if min_zoom != max_zoom:
-                # Force to single zoom at max_zoom (user is likely dragging the slider)
-                self.zoom_range_widget.set_value(max_zoom, max_zoom)
-                return
-
-            # Validate against calculated maximum zoom for web compatibility
-            if self.current_extent:
-                layer_compositions = self.get_layer_compositions()
-                if layer_compositions:
-                    separate_count = sum(1 for comp in layer_compositions if comp.export_mode == "separate")
-                    composited_count = len(layer_compositions) - separate_count
-                    effective_layer_count = max(1, composited_count) + separate_count
-
-                    calculated_max_zoom = TileCalculator.find_max_web_compatible_zoom(
-                        self.current_extent.min_lon,
-                        self.current_extent.min_lat,
-                        self.current_extent.max_lon,
-                        self.current_extent.max_lat,
-                        effective_layer_count,
-                    )
-
-                    # If user tries to go above calculated max, clamp it
-                    if max_zoom > calculated_max_zoom:
-                        self.zoom_range_widget.set_value(calculated_max_zoom, calculated_max_zoom)
-                        QMessageBox.warning(
-                            self,
-                            "Web Compatible Mode",
-                            f"Maximum zoom for this extent is {calculated_max_zoom} to stay within "
-                            f"Google Earth Web's image limits (~500 chunks per layer).",
-                        )
-                        return
-
         # Update display label
         if min_zoom == max_zoom:
             self.zoom_display_label.setText(f"Zoom: {max_zoom}")
@@ -988,65 +938,7 @@ class SettingsPanel(QWidget):
         _, max_zoom = self.zoom_range_widget.value()
         self.sync_preview_zoom_requested.emit(max_zoom)
 
-    def _on_web_compatible_changed(self, state):
-        """Handle web compatible mode checkbox change."""
-        # Don't show warnings or modify values during config loading
-        if self._suppress_state_changes:
-            return
-
-        is_checked = self.web_compatible_checkbox.isChecked()
-
-        if is_checked and self.current_extent:
-            # Calculate optimal zoom based on extent and enabled layer compositions
-            layer_compositions = self.get_layer_compositions()
-            if layer_compositions:
-                # Count effective layers (composited + each separate layer)
-                separate_count = sum(1 for comp in layer_compositions if comp.export_mode == "separate")
-                composited_count = len(layer_compositions) - separate_count
-                effective_layer_count = max(1, composited_count) + separate_count
-
-                # Find max zoom that stays under chunk limit
-                calculated_max_zoom = TileCalculator.find_max_web_compatible_zoom(
-                    self.current_extent.min_lon,
-                    self.current_extent.min_lat,
-                    self.current_extent.max_lon,
-                    self.current_extent.max_lat,
-                    effective_layer_count,
-                )
-
-                # Get user's current zoom range
-                user_min_zoom, user_max_zoom = self.zoom_range_widget.value()
-
-                # Determine the zoom to use (min of calculated max and user's max)
-                target_zoom = min(calculated_max_zoom, user_max_zoom)
-
-                # Show error if calculated max < user's min
-                if calculated_max_zoom < user_min_zoom:
-                    QMessageBox.critical(
-                        self,
-                        "Web Compatible Mode Error",
-                        f"ERROR: Extent too large for web compatible mode.\n\n"
-                        f"Calculated maximum zoom ({calculated_max_zoom}) is below your minimum zoom ({user_min_zoom}).\n\n"
-                        f"Please reduce the extent area or disable web compatible mode.",
-                    )
-                    # Uncheck the checkbox
-                    self.web_compatible_checkbox.setChecked(False)
-                    return
-
-                # Show warning if we had to reduce the zoom
-                if calculated_max_zoom < user_max_zoom:
-                    QMessageBox.warning(
-                        self,
-                        "Web Compatible Mode",
-                        f"WARNING: Calculated maximum zoom ({calculated_max_zoom}) is lower than "
-                        f"your specified max zoom ({user_max_zoom}).\n\n"
-                        f"The KMZ will be generated at zoom {calculated_max_zoom} to stay within Google Earth Web's image limits.\n"
-                        f"Your zoom settings have not been changed - you can adjust them if needed.",
-                    )
-
-        # Update estimates to reflect web compatible mode
-        self._update_estimates()
-        self._emit_state_changed()
+    # Note: Web compatible mode is now handled per-output in OutputItemWidget
 
     def _update_zoom_range(self):
         """Update zoom range based on enabled layers."""
@@ -1071,15 +963,75 @@ class SettingsPanel(QWidget):
             self.zoom_range_widget.set_range(layer_min_zoom, layer_max_zoom)
             self.zoom_range_widget.setEnabled(True)
 
-    def _browse_output_path(self):
-        """Open file dialog to select output path."""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save KMZ File", str(Path.home() / "tiles.kmz"), "KMZ Files (*.kmz)"
+    def _on_add_output_clicked(self):
+        """Add new output widget."""
+        default_output = OutputConfig(
+            output_type="kmz",
+            output_path=Path(""),
+            options={"web_compatible": False}
         )
+        self._add_output_widget(default_output)
+        self._emit_state_changed()
 
-        if file_path:
-            self.output_path_edit.setText(file_path)
-            self._update_generate_button()
+    def _add_output_widget(self, output_config: OutputConfig):
+        """Add an output widget to the UI.
+
+        Args:
+            output_config: Output configuration
+        """
+        widget = OutputItemWidget(output_config, self)
+        widget.changed.connect(self._on_output_changed)
+        widget.remove_requested.connect(lambda: self._remove_output(widget))
+
+        # Add to layout and list
+        self.outputs_layout.addWidget(widget)
+        self.output_widgets.append(widget)
+
+        # Update estimates with current state
+        if self.current_extent:
+            min_zoom, max_zoom = self.zoom_range_widget.value()
+            layer_compositions = self.get_layer_compositions()
+            widget.update_estimates(self.current_extent, min_zoom, max_zoom, layer_compositions)
+
+        # Update export button state
+        self._update_generate_button()
+
+    def _remove_output(self, widget: OutputItemWidget):
+        """Remove output widget.
+
+        Args:
+            widget: Output widget to remove
+        """
+        # Remove from layout
+        self.outputs_layout.removeWidget(widget)
+
+        # Remove from list
+        self.output_widgets.remove(widget)
+
+        # Delete widget
+        widget.deleteLater()
+
+        # Update export button state
+        self._update_generate_button()
+
+        # Emit state changed
+        self._emit_state_changed()
+
+    def _on_output_changed(self):
+        """Handle output settings change."""
+        self._update_generate_button()
+        self._emit_state_changed()
+
+    def _update_output_estimates(self):
+        """Update estimates for all output widgets."""
+        if not self.current_extent:
+            return
+
+        min_zoom, max_zoom = self.zoom_range_widget.value()
+        layer_compositions = self.get_layer_compositions()
+
+        for widget in self.output_widgets:
+            widget.update_estimates(self.current_extent, min_zoom, max_zoom, layer_compositions)
 
     def update_extent(self, extent: Extent):
         """
@@ -1120,87 +1072,17 @@ class SettingsPanel(QWidget):
         self._update_generate_button()
 
     def _update_estimates(self):
-        """Update tile count and size estimates."""
-        if not self.current_extent:
-            self.tile_count_label.setText("Tiles: -")
-            self.size_estimate_label.setText("Size: -")
-            return
-
-        enabled_layers = self.get_enabled_layers()
-        if not enabled_layers:
-            self.tile_count_label.setText("Tiles: -")
-            self.size_estimate_label.setText("Size: -")
-            return
-
-        min_zoom, max_zoom = self.zoom_range_widget.value()
-        is_web_compatible = self.web_compatible_checkbox.isChecked()
-
-        if is_web_compatible:
-            # Web compatible mode: calculate chunks instead of tiles
-            layer_compositions = self.get_layer_compositions()
-            if not layer_compositions:
-                self.tile_count_label.setText("Chunks: -")
-                self.size_estimate_label.setText("Size: -")
-                return
-
-            # Count effective layers for calculation
-            separate_count = sum(1 for comp in layer_compositions if comp.export_mode == "separate")
-            composited_count = len(layer_compositions) - separate_count
-            effective_layer_count = max(1, composited_count) + separate_count
-
-            # Calculate chunks at the single zoom level
-            chunk_count = TileCalculator.calculate_chunks_at_zoom(
-                self.current_extent.min_lon,
-                self.current_extent.min_lat,
-                self.current_extent.max_lon,
-                self.current_extent.max_lat,
-                max_zoom,
-                chunk_size=CHUNK_SIZE,
-            )
-
-            # Estimate size based on chunk size
-            # CHUNK_SIZE=4 means 4x4=16 tiles per chunk, CHUNK_SIZE=8 means 8x8=64 tiles per chunk
-            # Empirically: ~6KB per tile after compression when merged into chunks
-            avg_chunk_size_kb = (CHUNK_SIZE ** 2) * 6
-            total_size_mb = (chunk_count * effective_layer_count * avg_chunk_size_kb) / 1024
-
-            self.tile_count_label.setText(f"Chunks: {chunk_count:,} ({chunk_count * effective_layer_count:,} total)")
-            self.size_estimate_label.setText(f"Size: ~{total_size_mb:.1f} MB (web compatible)")
-        else:
-            # Regular mode: calculate tiles
-            total_tiles = 0
-            total_size_mb = 0
-
-            for zoom in range(min_zoom, max_zoom + 1):
-                tile_count = TileCalculator.estimate_tile_count(
-                    self.current_extent.min_lon,
-                    self.current_extent.min_lat,
-                    self.current_extent.max_lon,
-                    self.current_extent.max_lat,
-                    zoom,
-                )
-                total_tiles += tile_count
-
-                for layer in enabled_layers:
-                    size_mb = TileCalculator.estimate_download_size(tile_count, layer.extension)
-                    total_size_mb += size_mb
-
-            # Display differently for single vs multi-zoom
-            zoom_levels = max_zoom - min_zoom + 1
-            if zoom_levels == 1:
-                self.tile_count_label.setText(f"Tiles: {total_tiles:,}")
-            else:
-                self.tile_count_label.setText(f"Tiles: {total_tiles:,} ({zoom_levels} zoom levels)")
-
-            self.size_estimate_label.setText(f"Size: ~{total_size_mb:.1f} MB")
+        """Update tile count and size estimates for all outputs."""
+        # Estimates are now per-output, update all output widgets
+        self._update_output_estimates()
 
     def _update_generate_button(self):
         """Update generate button enabled state."""
         has_extent = self.current_extent is not None
-        has_output = bool(self.output_path_edit.text())
+        has_outputs = len(self.output_widgets) > 0
         has_layers = len(self.get_enabled_layers()) > 0
 
-        self.generate_button.setEnabled(has_extent and has_output and has_layers)
+        self.generate_button.setEnabled(has_extent and has_outputs and has_layers)
 
     def _on_generate_clicked(self):
         """Handle generate button click."""
@@ -1210,8 +1092,25 @@ class SettingsPanel(QWidget):
 
         layer_compositions = self.get_layer_compositions()
         min_zoom, max_zoom = self.zoom_range_widget.value()
-        output_path = self.output_path_edit.text()
-        web_compatible = self.web_compatible_checkbox.isChecked()
+
+        # Collect outputs from all output widgets
+        outputs = [widget.get_config() for widget in self.output_widgets]
+
+        # Validate that all outputs have paths specified
+        empty_outputs = []
+        for idx, output in enumerate(outputs, 1):
+            if str(output.output_path) in ("", "."):
+                empty_outputs.append(idx)
+
+        if empty_outputs:
+            if len(empty_outputs) == 1:
+                message = f"Output {empty_outputs[0]} has no path specified. Please select an output file path."
+            else:
+                outputs_list = ", ".join(str(i) for i in empty_outputs)
+                message = f"Outputs {outputs_list} have no paths specified. Please select output file paths."
+
+            QMessageBox.warning(self, "Missing Output Paths", message)
+            return
 
         # Create generation request
         request = GenerationRequest(
@@ -1219,8 +1118,7 @@ class SettingsPanel(QWidget):
             min_zoom=min_zoom,
             max_zoom=max_zoom,
             extent=self.current_extent,
-            output_path=Path(output_path),
-            web_compatible=web_compatible,
+            outputs=outputs,
         )
 
         self.generate_requested.emit(request)
@@ -1249,7 +1147,7 @@ class SettingsPanel(QWidget):
         Get complete UI state as dictionary (for YAML serialization).
 
         Returns:
-            Dictionary with extent, min_zoom, max_zoom, output, and layers keys
+            Dictionary with extent, min_zoom, max_zoom, outputs, and layers keys
 
         Raises:
             ValueError: If extent is not set
@@ -1262,13 +1160,15 @@ class SettingsPanel(QWidget):
         layer_compositions = self.get_layer_compositions()
         min_zoom, max_zoom = self.zoom_range_widget.value()
 
+        # Collect outputs from all output widgets
+        outputs = [widget.get_config().to_dict() for widget in self.output_widgets]
+
         state = {
             "extent": self.current_extent.to_dict(),
             "min_zoom": min_zoom,
             "max_zoom": max_zoom,
-            "output": self.output_path_edit.text(),
+            "outputs": outputs,
             "layers": [comp.to_dict() for comp in layer_compositions],
-            "web_compatible": self.web_compatible_checkbox.isChecked(),
         }
 
         # Include layer_sources if we have custom layers
@@ -1338,20 +1238,24 @@ class SettingsPanel(QWidget):
             max_zoom = state["max_zoom"]
             self.zoom_range_widget.set_value(min_zoom, max_zoom)
 
-            # 4. Set output path
-            self.output_path_edit.setText(state["output"])
+            # 4. Clear existing outputs
+            for widget in list(self.output_widgets):
+                self.outputs_layout.removeWidget(widget)
+                widget.deleteLater()
+            self.output_widgets.clear()
 
-            # 5. Set extent
+            # 5. Load outputs
+            for output_dict in state["outputs"]:
+                output_config = OutputConfig.from_dict(output_dict)
+                self._add_output_widget(output_config)
+
+            # 6. Set extent
             extent = Extent.from_dict(state["extent"])
             self.current_extent = extent
             self.north_edit.setText(f"{extent.max_lat:.6f}")
             self.south_edit.setText(f"{extent.min_lat:.6f}")
             self.east_edit.setText(f"{extent.max_lon:.6f}")
             self.west_edit.setText(f"{extent.min_lon:.6f}")
-
-            # 6. Set web compatible mode
-            web_compatible = state.get("web_compatible", False)
-            self.web_compatible_checkbox.setChecked(web_compatible)
 
         finally:
             self._suppress_state_changes = False

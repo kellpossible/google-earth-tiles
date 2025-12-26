@@ -16,12 +16,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import TileCalculator
 from src.gui.file_operations import FileOperations
 from src.gui.map_widget import MapWidget
 from src.gui.settings_panel import SettingsPanel
 from src.models.generation_request import GenerationRequest
+from src.outputs import get_output_handler
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class ExportWorker(QThread):
     """Worker thread for complete export: download tiles, composite, and create KMZ."""
 
     progress = pyqtSignal(int, int, str)  # current, total, message
-    finished = pyqtSignal(Path)  # output_path
+    finished = pyqtSignal(list)  # list of output paths
     error = pyqtSignal(str)
 
     def __init__(self, request: GenerationRequest):
@@ -64,22 +64,42 @@ class ExportWorker(QThread):
 
             total_units = total_tiles
 
-            # Generate KMZ (tiles will be fetched on-demand with caching)
+            # Generate all outputs sequentially
+            result_paths = []
             is_multi_zoom = min_zoom < max_zoom
-            self.progress.emit(
-                0, total_units, "Generating KMZ with LOD pyramid..." if is_multi_zoom else "Generating KMZ..."
-            )
 
             def kmz_progress(current: int, total: int, message: str):
                 """Forward KMZ progress to UI."""
                 self.progress.emit(current, total, message)
 
-            generator = KMZGenerator(self.request.output_path, kmz_progress)
-            result_path = generator.create_kmz(
-                self.request.extent, min_zoom, max_zoom, self.request.layer_compositions, self.request.web_compatible
-            )
+            for idx, output_config in enumerate(self.request.outputs, 1):
+                # Get the output handler for this type
+                handler = get_output_handler(output_config.output_type)
 
-            self.finished.emit(result_path)
+                # Update progress message
+                if len(self.request.outputs) > 1:
+                    base_msg = f"Output {idx}/{len(self.request.outputs)} ({handler.get_display_name()}): "
+                else:
+                    base_msg = f"{handler.get_display_name()}: "
+
+                if is_multi_zoom:
+                    self.progress.emit(0, total_units, f"{base_msg}Generating with LOD pyramid...")
+                else:
+                    self.progress.emit(0, total_units, f"{base_msg}Generating...")
+
+                # Generate output using the handler
+                result_path = handler.generate(
+                    output_path=output_config.output_path,
+                    extent=self.request.extent,
+                    min_zoom=min_zoom,
+                    max_zoom=max_zoom,
+                    layer_compositions=self.request.layer_compositions,
+                    progress_callback=kmz_progress,
+                    **output_config.options
+                )
+                result_paths.append(result_path)
+
+            self.finished.emit(result_paths)
 
         except Exception as e:
             logger.exception("Error during export")
@@ -298,15 +318,21 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(current)
         self.status_bar.showMessage(f"{message} ({current}/{total})")
 
-    def on_export_finished(self, result_path: Path):
+    def on_export_finished(self, result_paths: list[Path]):
         """
         Handle export completion.
 
         Args:
-            result_path: Path to created KMZ file
+            result_paths: List of paths to created output files
         """
         # Show success message
-        QMessageBox.information(self, "Success", f"KMZ file created successfully!\n\nSaved to: {result_path}")
+        if len(result_paths) == 1:
+            message = f"Output file created successfully!\n\nSaved to: {result_paths[0]}"
+        else:
+            files_list = "\n".join([f"• {path}" for path in result_paths])
+            message = f"{len(result_paths)} output files created successfully!\n\n{files_list}"
+
+        QMessageBox.information(self, "Success", message)
 
         self.status_bar.showMessage("Ready")
         self.progress_bar.setVisible(False)

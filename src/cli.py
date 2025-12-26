@@ -6,10 +6,11 @@ from pathlib import Path
 import yaml
 
 from src.core.config import LAYERS, build_layer_registry
-from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import TileCalculator
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
+from src.models.output_config import OutputConfig
+from src.outputs import get_output_handler
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def validate_config(config: dict, layer_registry: dict | None = None) -> None:
     if layer_registry is None:
         layer_registry = LAYERS
 
-    required_keys = ["extent", "min_zoom", "max_zoom", "output", "layers"]
+    required_keys = ["extent", "min_zoom", "max_zoom", "outputs", "layers"]
 
     for key in required_keys:
         if key not in config:
@@ -137,14 +138,19 @@ def validate_config(config: dict, layer_registry: dict | None = None) -> None:
     if min_zoom > max_zoom:
         raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
 
-    # Validate web_compatible mode
-    if "web_compatible" in config:
-        web_compatible = config["web_compatible"]
-        if not isinstance(web_compatible, bool):
-            raise ValueError("web_compatible must be a boolean")
+    # Validate outputs
+    if not isinstance(config["outputs"], list) or len(config["outputs"]) == 0:
+        raise ValueError("outputs must be a non-empty list")
 
-        # Note: web_compatible mode will automatically calculate optimal zoom within range
-        # No need to enforce min_zoom == max_zoom here
+    for output in config["outputs"]:
+        if not isinstance(output, dict):
+            raise ValueError("Each output must be a dictionary")
+        if "path" not in output:
+            raise ValueError("Each output must have a 'path' field")
+        if "type" in output and output["type"] not in ["kmz"]:
+            raise ValueError(f"Invalid output type: {output['type']}. Valid types: kmz")
+        if "web_compatible" in output and not isinstance(output["web_compatible"], bool):
+            raise ValueError("output web_compatible must be a boolean")
 
 
 def run_cli(config_path: str) -> int:
@@ -187,19 +193,28 @@ def run_cli(config_path: str) -> int:
         if not extent.is_fully_within_japan_region():
             logger.warning("Extent is partially outside valid region. Some tiles may not be available.")
 
-        output_path = Path(config["output"])
+        # Parse outputs
+        outputs = []
+        for output_dict in config["outputs"]:
+            try:
+                outputs.append(OutputConfig.from_dict(output_dict))
+            except Exception as e:
+                logger.error(f"Invalid output configuration: {e}")
+                return 1
+
+        if not outputs:
+            logger.error("No outputs specified. At least one output is required.")
+            return 1
+
         layer_specs = config["layers"]
 
         # Parse zoom configuration
         min_zoom = config["min_zoom"]
         max_zoom = config["max_zoom"]
-        web_compatible = config.get("web_compatible", False)
         include_timestamp = config.get("include_timestamp", True)
         enable_cache = config.get("enable_cache", True)
 
-        if web_compatible:
-            logger.info(f"Web compatible mode enabled: single zoom level {max_zoom}")
-        elif min_zoom < max_zoom:
+        if min_zoom < max_zoom:
             logger.info(f"Multi-zoom enabled: zoom {min_zoom} to {max_zoom}")
         else:
             logger.info(f"Single zoom level: {max_zoom}")
@@ -239,16 +254,36 @@ def run_cli(config_path: str) -> int:
             f"  Extent: {extent.min_lon:.4f}, {extent.min_lat:.4f} to {extent.max_lon:.4f}, {extent.max_lat:.4f}"
         )
         logger.info(f"  Total tiles to composite: {total_tiles:,}")
-        logger.info(f"  Output: {output_path}")
+        logger.info(f"  Outputs: {len(outputs)}")
 
-        # Generate KMZ (tiles will be fetched on-demand with caching)
-        logger.info("Generating KMZ file...")
+        # Generate outputs (tiles will be fetched on-demand with caching)
         if not enable_cache:
             logger.info("Tile caching disabled")
-        generator = KMZGenerator(output_path, enable_cache=enable_cache)
-        result_path = generator.create_kmz(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp)
 
-        logger.info(f"✓ KMZ file created successfully: {result_path}")
+        for idx, output_config in enumerate(outputs, 1):
+            # Get the output handler for this type
+            handler = get_output_handler(output_config.output_type)
+
+            logger.info(f"Generating output {idx}/{len(outputs)} ({handler.get_display_name()}): {output_config.output_path}")
+
+            # Log format-specific options
+            if output_config.web_compatible:
+                logger.info(f"  Web compatible mode enabled: single zoom level {max_zoom}")
+
+            # Generate output using the handler
+            result_path = handler.generate(
+                output_path=output_config.output_path,
+                extent=extent,
+                min_zoom=min_zoom,
+                max_zoom=max_zoom,
+                layer_compositions=layer_compositions,
+                progress_callback=None,
+                include_timestamp=include_timestamp,
+                **output_config.options
+            )
+            logger.info(f"✓ Created: {result_path}")
+
+        logger.info("All outputs generated successfully")
         return 0
 
     except FileNotFoundError as e:

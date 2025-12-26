@@ -24,7 +24,7 @@ def test_basic_single_layer_composite(snapshot):
             "min_zoom": 12,
             "max_zoom": 12,
             "layers": ["std"],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
         }
 
@@ -55,7 +55,7 @@ def test_multi_zoom_lod(snapshot):
             "min_zoom": 11,
             "max_zoom": 13,
             "layers": ["std"],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
         }
 
@@ -87,7 +87,7 @@ def test_separate_export_mode(snapshot):
                 "std",
                 {"name": "slopezone1map", "opacity": 70, "export_mode": "separate"},
             ],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
         }
 
@@ -130,7 +130,7 @@ def test_lod_select_zooms(snapshot):
                     "selected_zooms": [11, 13],  # Native tiles at 11 & 13; zoom 12 resampled from 13
                 }
             ],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
         }
 
@@ -158,9 +158,8 @@ def test_web_compatible_mode(snapshot):
             },
             "min_zoom": 12,
             "max_zoom": 14,
-            "web_compatible": True,
             "layers": ["std"],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": True}],
             "include_timestamp": False,
         }
 
@@ -188,12 +187,11 @@ def test_web_compatible_with_separate_layer(snapshot):
             },
             "min_zoom": 12,
             "max_zoom": 14,
-            "web_compatible": True,
             "layers": [
                 "std",
                 {"name": "slopezone1map", "opacity": 60, "export_mode": "separate"},
             ],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": True}],
             "include_timestamp": False,
         }
 
@@ -226,7 +224,7 @@ def test_multiple_layers_blending(snapshot):
                 {"name": "ort", "opacity": 80, "blend_mode": "multiply"},
                 {"name": "slopezone1map", "opacity": 50, "blend_mode": "overlay"},
             ],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
         }
 
@@ -258,7 +256,7 @@ def test_layer_enabled_disabled(snapshot):
                 "std",
                 {"name": "ort", "enabled": False},  # Disabled layer
             ],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
         }
 
@@ -290,7 +288,7 @@ def test_blend_modes(snapshot):
                 "std",
                 {"name": "ort", "blend_mode": "screen"},
             ],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
         }
 
@@ -345,7 +343,7 @@ def test_custom_layer_sources(snapshot, tile_server):
             "min_zoom": 12,
             "max_zoom": 12,
             "layers": ["custom_red"],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
             "enable_cache": False,
         }
@@ -442,7 +440,7 @@ def test_resampling_validation(tile_server):
                     "selected_zooms": [11, 15],
                 }
             ],
-            "output": str(temp_path / "output.kmz"),
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
             "include_timestamp": False,
             "enable_cache": False,
         }

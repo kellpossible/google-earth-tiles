@@ -39,8 +39,12 @@ extent:
 #   16-18: Street/building scale
 zoom: 14
 
-# Output KMZ file path
-output: output/hokkaido-tiles.kmz
+# Output configurations (can specify one or more)
+# Each output has its own file path and settings
+outputs:
+  - type: kmz
+    path: output/hokkaido-tiles.kmz
+    web_compatible: false  # Set to true for Google Earth Web optimized output
 
 # Layers to include (can specify one or more)
 # Available options: std, pale, english, ort, relief, seamlessphoto
