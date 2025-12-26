@@ -1,6 +1,9 @@
 """Configuration for WMTS layers and application settings."""
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -930,6 +933,159 @@ LAYERS: dict[str, LayerConfig] = {
         category="other",
     ),
 }
+
+
+# Helper functions for custom layer sources
+
+def validate_layer_source_definition(layer_name: str, layer_def: dict) -> None:
+    """Validate a custom layer source definition.
+
+    Args:
+        layer_name: The name of the custom layer
+        layer_def: Dictionary containing layer definition
+
+    Raises:
+        ValueError: If the layer definition is invalid
+
+    Checks:
+    - Required fields present (url_template, extension, min_zoom, max_zoom)
+    - url_template contains {z}, {x}, {y} placeholders
+    - extension is "png" or "jpg"
+    - min_zoom <= max_zoom, both in range 0-18
+    - Optional fields have correct types
+    - Category is valid (if provided)
+    """
+    # Check required fields
+    required_fields = ["url_template", "extension", "min_zoom", "max_zoom"]
+    missing_fields = [field for field in required_fields if field not in layer_def]
+    if missing_fields:
+        raise ValueError(
+            f"Custom layer '{layer_name}' is missing required fields: {', '.join(missing_fields)}"
+        )
+
+    # Validate url_template
+    url_template = layer_def["url_template"]
+    if not isinstance(url_template, str):
+        raise ValueError(f"Custom layer '{layer_name}': url_template must be a string")
+
+    required_placeholders = ["{z}", "{x}", "{y}"]
+    missing_placeholders = [p for p in required_placeholders if p not in url_template]
+    if missing_placeholders:
+        raise ValueError(
+            f"Custom layer '{layer_name}': url_template must contain "
+            f"{', '.join(missing_placeholders)} placeholders. Got: {url_template}"
+        )
+
+    # Validate extension
+    extension = layer_def["extension"]
+    if extension not in ["png", "jpg"]:
+        raise ValueError(
+            f"Custom layer '{layer_name}': extension must be 'png' or 'jpg', got '{extension}'"
+        )
+
+    # Validate zoom range
+    min_zoom = layer_def["min_zoom"]
+    max_zoom = layer_def["max_zoom"]
+
+    if not isinstance(min_zoom, int) or not isinstance(max_zoom, int):
+        raise ValueError(f"Custom layer '{layer_name}': min_zoom and max_zoom must be integers")
+
+    if not (0 <= min_zoom <= 18) or not (0 <= max_zoom <= 18):
+        raise ValueError(
+            f"Custom layer '{layer_name}': zoom levels must be between 0 and 18, "
+            f"got min_zoom={min_zoom}, max_zoom={max_zoom}"
+        )
+
+    if min_zoom > max_zoom:
+        raise ValueError(
+            f"Custom layer '{layer_name}': min_zoom ({min_zoom}) must be <= max_zoom ({max_zoom})"
+        )
+
+    # Validate optional category field
+    if "category" in layer_def:
+        category = layer_def["category"]
+        if category not in CATEGORIES:
+            valid_categories = ", ".join(CATEGORIES.keys())
+            raise ValueError(
+                f"Custom layer '{layer_name}': invalid category '{category}'. "
+                f"Valid categories: {valid_categories}"
+            )
+
+
+def create_layer_config_from_dict(layer_name: str, layer_def: dict) -> LayerConfig:
+    """Create LayerConfig from dictionary definition.
+
+    Args:
+        layer_name: The name of the custom layer
+        layer_def: Dictionary containing layer definition
+
+    Returns:
+        LayerConfig object with custom_url_template set
+
+    Required keys: url_template, extension, min_zoom, max_zoom
+    Optional keys: display_name, description, japanese_name, full_description, info_url, category
+    """
+    return LayerConfig(
+        name=layer_name,
+        display_name=layer_def.get("display_name", layer_name),
+        extension=layer_def["extension"],
+        min_zoom=layer_def["min_zoom"],
+        max_zoom=layer_def["max_zoom"],
+        description=layer_def.get("description", ""),
+        japanese_name=layer_def.get("japanese_name", ""),
+        full_description=layer_def.get("full_description", ""),
+        info_url=layer_def.get("info_url", ""),
+        category=layer_def.get("category", "other"),
+        custom_url_template=layer_def["url_template"],
+    )
+
+
+def build_layer_registry(config: dict) -> dict[str, LayerConfig]:
+    """Build layer registry combining default LAYERS with custom layer_sources.
+
+    Args:
+        config: The full YAML config dictionary
+
+    Returns:
+        Dictionary mapping layer names to LayerConfig objects
+
+    Raises:
+        ValueError: If custom layer definition is invalid
+
+    Notes:
+    - Starts with copy of default LAYERS
+    - Adds custom layers from layer_sources if present
+    - Warns if custom layer overrides default layer (but allows it)
+    - Returns merged dictionary
+    """
+    # Start with default layers
+    registry = LAYERS.copy()
+
+    # Add custom layers if defined
+    if "layer_sources" in config:
+        custom_layers = config["layer_sources"]
+
+        if not isinstance(custom_layers, dict):
+            raise ValueError("layer_sources must be a dictionary")
+
+        for layer_name, layer_def in custom_layers.items():
+            # Validate the layer definition
+            validate_layer_source_definition(layer_name, layer_def)
+
+            # Create LayerConfig
+            layer_config = create_layer_config_from_dict(layer_name, layer_def)
+
+            # Warn if overriding default layer
+            if layer_name in LAYERS:
+                logger.warning(
+                    f"Custom layer '{layer_name}' overrides default layer. "
+                    f"This may cause confusion - consider using a different name."
+                )
+
+            registry[layer_name] = layer_config
+
+    return registry
+
 
 # Download settings
 MAX_CONCURRENT_DOWNLOADS = 8

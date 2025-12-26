@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from src.core.config import LAYERS
+from src.core.config import LAYERS, build_layer_registry
 from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import TileCalculator
 from src.models.extent import Extent
@@ -38,16 +38,21 @@ def load_config(config_path: str) -> dict:
     return config
 
 
-def validate_config(config: dict) -> None:
+def validate_config(config: dict, layer_registry: dict | None = None) -> None:
     """
     Validate configuration.
 
     Args:
         config: Configuration dictionary
+        layer_registry: Optional custom layer registry to use instead of default LAYERS
 
     Raises:
         ValueError: If configuration is invalid
     """
+    # Use provided registry or fall back to default LAYERS
+    if layer_registry is None:
+        layer_registry = LAYERS
+
     required_keys = ["extent", "min_zoom", "max_zoom", "output", "layers"]
 
     for key in required_keys:
@@ -67,13 +72,17 @@ def validate_config(config: dict) -> None:
     for layer in config["layers"]:
         # Support both simple string format and dict format
         if isinstance(layer, str):
-            if layer not in LAYERS:
-                raise ValueError(f"Invalid layer: {layer}. Valid layers: {', '.join(LAYERS.keys())}")
+            if layer not in layer_registry:
+                raise ValueError(
+                    f"Invalid layer: {layer}. Valid layers: {', '.join(layer_registry.keys())}"
+                )
         elif isinstance(layer, dict):
             if "name" not in layer:
                 raise ValueError("Layer dict must have 'name' field")
-            if layer["name"] not in LAYERS:
-                raise ValueError(f"Invalid layer: {layer['name']}. Valid layers: {', '.join(LAYERS.keys())}")
+            if layer["name"] not in layer_registry:
+                raise ValueError(
+                    f"Invalid layer: {layer['name']}. Valid layers: {', '.join(layer_registry.keys())}"
+                )
             # Validate optional fields
             if "opacity" in layer and not (0 <= layer["opacity"] <= 100):
                 raise ValueError(f"Opacity must be between 0 and 100, got {layer['opacity']}")
@@ -152,7 +161,11 @@ def run_cli(config_path: str) -> int:
         # Load and validate config
         logger.info(f"Loading configuration from: {config_path}")
         config = load_config(config_path)
-        validate_config(config)
+
+        # Build layer registry (includes default LAYERS + custom layer_sources)
+        layer_registry = build_layer_registry(config)
+
+        validate_config(config, layer_registry)
 
         # Parse configuration
         extent = Extent(
@@ -181,6 +194,8 @@ def run_cli(config_path: str) -> int:
         min_zoom = config["min_zoom"]
         max_zoom = config["max_zoom"]
         web_compatible = config.get("web_compatible", False)
+        include_timestamp = config.get("include_timestamp", True)
+        enable_cache = config.get("enable_cache", True)
 
         if web_compatible:
             logger.info(f"Web compatible mode enabled: single zoom level {max_zoom}")
@@ -196,7 +211,7 @@ def run_cli(config_path: str) -> int:
         for spec in layer_specs:
             # Use LayerComposition.from_dict() to properly parse all fields
             # including lod_mode, selected_zooms, opacity, blend_mode, etc.
-            composition = LayerComposition.from_dict(spec)
+            composition = LayerComposition.from_dict(spec, layer_registry)
             layer_compositions.append(composition)
             layers.append(composition.layer_config)
 
@@ -228,8 +243,10 @@ def run_cli(config_path: str) -> int:
 
         # Generate KMZ (tiles will be fetched on-demand with caching)
         logger.info("Generating KMZ file...")
-        generator = KMZGenerator(output_path)
-        result_path = generator.create_kmz(extent, min_zoom, max_zoom, layer_compositions, web_compatible)
+        if not enable_cache:
+            logger.info("Tile caching disabled")
+        generator = KMZGenerator(output_path, enable_cache=enable_cache)
+        result_path = generator.create_kmz(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp)
 
         logger.info(f"✓ KMZ file created successfully: {result_path}")
         return 0

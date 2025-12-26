@@ -593,6 +593,7 @@ class SettingsPanel(QWidget):
         self.layer_widgets: list[LayerItemWidget] = []
         self.current_preview_zoom: int | None = None
         self._suppress_state_changes = False
+        self.custom_layer_registry: dict = {}  # Custom layers from layer_sources in config
         self.init_ui()
 
     def init_ui(self):
@@ -826,9 +827,13 @@ class SettingsPanel(QWidget):
 
     def _on_add_layer_clicked(self):
         """Handle Add Layer button click."""
+        # Merge default LAYERS with custom layers
+        merged_registry = LAYERS.copy()
+        merged_registry.update(self.custom_layer_registry)
+
         # Get list of layers not currently added
         added_layer_names = {w.composition.layer_config.name for w in self.layer_widgets}
-        available_layers = [config for name, config in LAYERS.items() if name not in added_layer_names]
+        available_layers = [config for name, config in merged_registry.items() if name not in added_layer_names]
 
         if not available_layers:
             QMessageBox.information(self, "No Layers Available", "All available layers have already been added.")
@@ -1263,6 +1268,29 @@ class SettingsPanel(QWidget):
             "web_compatible": self.web_compatible_checkbox.isChecked(),
         }
 
+        # Include layer_sources if we have custom layers
+        if self.custom_layer_registry:
+            from src.core.config import LAYERS
+
+            layer_sources = {}
+            for name, config in self.custom_layer_registry.items():
+                # Only save custom layers that aren't in default LAYERS
+                if name not in LAYERS:
+                    layer_sources[name] = {
+                        "url_template": config.custom_url_template,
+                        "extension": config.extension,
+                        "min_zoom": config.min_zoom,
+                        "max_zoom": config.max_zoom,
+                        "display_name": config.display_name,
+                        "description": config.description,
+                        "japanese_name": config.japanese_name,
+                        "full_description": config.full_description,
+                        "info_url": config.info_url,
+                        "category": config.category,
+                    }
+            if layer_sources:
+                state["layer_sources"] = layer_sources
+
         return state
 
     def load_state_dict(self, state: dict) -> None:
@@ -1276,8 +1304,19 @@ class SettingsPanel(QWidget):
             ValueError: If state is invalid
         """
         from src.cli import validate_config
+        from src.core.config import build_layer_registry
 
-        validate_config(state)
+        # Build layer registry (includes default LAYERS + custom layer_sources)
+        layer_registry = build_layer_registry(state)
+
+        # Store custom layers for use in Add Layer dialog
+        from src.core.config import LAYERS
+
+        self.custom_layer_registry = {
+            name: config for name, config in layer_registry.items() if name not in LAYERS
+        }
+
+        validate_config(state, layer_registry)
 
         # Suppress state changes during load
         self._suppress_state_changes = True
@@ -1288,7 +1327,7 @@ class SettingsPanel(QWidget):
 
             # 2. Load layers (YAML has compositing order, reverse for UI display)
             for layer_spec in reversed(state["layers"]):
-                comp = LayerComposition.from_dict(layer_spec)
+                comp = LayerComposition.from_dict(layer_spec, layer_registry)
                 self._add_layer_with_composition(comp)
 
             # 3. Set zoom range

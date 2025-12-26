@@ -6,6 +6,8 @@ dist/
 wheels/
 *.egg-info
 *.kmz
+# Allow snapshot KMZ files for testing
+!tests/snapshots/*.kmz
 
 # Output files
 output/

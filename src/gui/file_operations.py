@@ -150,13 +150,12 @@ class FileOperations:
             True if loaded successfully, False otherwise
         """
         try:
-            from src.cli import load_config, validate_config
+            from src.cli import load_config
 
-            # Load and validate
+            # Load config (validation happens in load_state_callback which has access to layer_sources)
             config = load_config(str(file_path))
-            validate_config(config)
 
-            # Load into UI
+            # Load into UI (this will build layer registry and validate)
             load_state_callback(config)
 
             self.current_file = file_path

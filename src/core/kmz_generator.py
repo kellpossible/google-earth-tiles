@@ -21,17 +21,18 @@ logger = logging.getLogger(__name__)
 class KMZGenerator:
     """Generator for KMZ files with composited layers."""
 
-    def __init__(self, output_path: Path, progress_callback=None):
+    def __init__(self, output_path: Path, progress_callback=None, enable_cache: bool = True):
         """
         Initialize KMZ generator.
 
         Args:
             output_path: Path for output KMZ file
             progress_callback: Optional callback(current, total, message) for progress updates
+            enable_cache: Whether to use tile caching (default: True)
         """
         self.output_path = Path(output_path)
         self.kml = simplekml.Kml()
-        self.compositor = TileCompositor()
+        self.compositor = TileCompositor(enable_cache=enable_cache)
         self.progress_callback = progress_callback
 
     @staticmethod
@@ -251,6 +252,7 @@ class KMZGenerator:
         max_zoom: int,
         layer_compositions: list[LayerComposition],
         web_compatible: bool = False,
+        include_timestamp: bool = True,
     ) -> Path:
         """
         Create KMZ file with composited and/or separate layers.
@@ -308,7 +310,7 @@ class KMZGenerator:
 
             logger.info(f"Web compatible mode: Using zoom {actual_zoom} (range: {min_zoom}-{max_zoom})")
 
-            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions)
+            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions, include_timestamp)
 
         # Separate layers by export mode (handles single-layer special case)
         composited_layers, separate_layers = self._separate_layers_by_export_mode(layer_compositions)
@@ -321,7 +323,13 @@ class KMZGenerator:
             self.kml.document.name = f"GSI Tiles - Zoom {min_zoom}-{max_zoom} (LOD)"
         else:
             self.kml.document.name = f"GSI Tiles - Zoom {max_zoom}"
-        self.kml.document.description = f"Generated: {datetime.now().isoformat()}"
+
+        # Set description with optional timestamp
+        base_description = "GSI Tiles from https://maps.gsi.go.jp"
+        if include_timestamp:
+            self.kml.document.description = f"{base_description}\nGenerated: {datetime.now().isoformat()}"
+        else:
+            self.kml.document.description = base_description
 
         # Create temporary directory for tiles
         temp_dir = Path(tempfile.mkdtemp())
@@ -456,6 +464,7 @@ class KMZGenerator:
         max_zoom: int,
         layer_compositions: list[LayerComposition],
         web_compatible: bool = False,
+        include_timestamp: bool = True,
     ) -> Path:
         """
         Create KMZ file with composited tiles and optional LOD (synchronous wrapper).
@@ -478,7 +487,7 @@ class KMZGenerator:
             asyncio.set_event_loop(loop)
 
         return loop.run_until_complete(
-            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible)
+            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp)
         )
 
     def _add_composited_tiles(
@@ -732,7 +741,7 @@ class KMZGenerator:
         return canvas
 
     async def _create_kmz_web_compatible(
-        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition]
+        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition], include_timestamp: bool = True
     ) -> Path:
         """
         Create web-compatible KMZ with merged chunks.
@@ -750,7 +759,13 @@ class KMZGenerator:
 
         # Set document metadata
         self.kml.document.name = f"GSI Tiles - Zoom {zoom} (Web Compatible)"
-        self.kml.document.description = f"Generated: {datetime.now().isoformat()}\nOptimized for Google Earth Web"
+
+        # Set description with optional timestamp
+        base_description = "GSI Tiles from https://maps.gsi.go.jp\nOptimized for Google Earth Web"
+        if include_timestamp:
+            self.kml.document.description = f"{base_description}\nGenerated: {datetime.now().isoformat()}"
+        else:
+            self.kml.document.description = base_description
 
         temp_dir = Path(tempfile.mkdtemp())
         kml_temp_path = None

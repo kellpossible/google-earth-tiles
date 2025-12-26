@@ -12,9 +12,13 @@ format:
 lint-path PATH:
     uv run ty check {{PATH}}
 
-# Run tests (if applicable)
+# Run tests
 test:
     uv run pytest tests/
+
+# Update test snapshots
+update-snapshots:
+    uv run pytest tests/ --update-snapshots
 
 # Install/sync dependencies
 sync:

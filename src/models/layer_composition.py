@@ -158,7 +158,9 @@ class LayerComposition:
         return result
 
     @classmethod
-    def from_dict(cls, data: str | dict[str, Any]) -> "LayerComposition":
+    def from_dict(
+        cls, data: str | dict[str, Any], layer_registry: dict[str, LayerConfig] | None = None
+    ) -> "LayerComposition":
         """
         Create composition from dictionary (loaded from YAML).
 
@@ -166,14 +168,20 @@ class LayerComposition:
             data: Dictionary with name, opacity (optional), blend_mode (optional),
                   lod_mode (optional), selected_zooms (optional),
                   or a simple string representing the layer name
+            layer_registry: Optional custom layer registry to use instead of default LAYERS.
+                           Allows custom layer sources defined in config files.
 
         Returns:
             LayerComposition instance
 
         Raises:
-            ValueError: If layer name is not found in LAYERS
+            ValueError: If layer name is not found in layer registry
         """
         from src.core.config import LAYERS
+
+        # Use provided registry or fall back to default LAYERS
+        if layer_registry is None:
+            layer_registry = LAYERS
 
         # Handle both simple string format and dict format
         if isinstance(data, str):
@@ -193,11 +201,13 @@ class LayerComposition:
             selected_zooms = set(data.get("selected_zooms", []))
             enabled = data.get("enabled", True)
 
-        if layer_name not in LAYERS:
-            raise ValueError(f"Unknown layer: {layer_name}. Valid layers: {', '.join(LAYERS.keys())}")
+        if layer_name not in layer_registry:
+            raise ValueError(
+                f"Unknown layer: {layer_name}. Valid layers: {', '.join(layer_registry.keys())}"
+            )
 
         return cls(
-            layer_config=LAYERS[layer_name],
+            layer_config=layer_registry[layer_name],
             opacity=opacity,
             blend_mode=blend_mode,
             export_mode=export_mode,

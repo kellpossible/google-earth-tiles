@@ -23,9 +23,14 @@ logger = logging.getLogger(__name__)
 class TileCompositor:
     """Composites multiple tile layers with blend modes and opacity."""
 
-    def __init__(self):
-        """Initialize compositor."""
+    def __init__(self, enable_cache: bool = True):
+        """Initialize compositor.
+
+        Args:
+            enable_cache: Whether to use tile caching (default: True)
+        """
         self.session: aiohttp.ClientSession | None = None
+        self.enable_cache = enable_cache
 
         # Initialize cache directory
         # QStandardPaths.CacheLocation already includes org/app name if set via QCoreApplication
@@ -33,6 +38,8 @@ class TileCompositor:
         self.cache_dir = Path(cache_base) / "tiles"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Tile cache directory: {self.cache_dir}")
+        if not enable_cache:
+            logger.info("Tile caching disabled")
 
     def _get_cache_path(self, url: str) -> Path:
         """
@@ -161,8 +168,8 @@ class TileCompositor:
         """
         cache_path = self._get_cache_path(url)
 
-        # Check cache first
-        if cache_path.exists():
+        # Check cache first (if enabled)
+        if self.enable_cache and cache_path.exists():
             try:
                 tile = Image.open(cache_path).convert("RGBA")
 
@@ -181,11 +188,12 @@ class TileCompositor:
             if response.status_code == 200:
                 tile = Image.open(io.BytesIO(response.content)).convert("RGBA")
 
-                # Save to cache
-                try:
-                    tile.save(cache_path, format="PNG")
-                except Exception as e:
-                    logger.warning(f"Error saving tile to cache {cache_path}: {e}")
+                # Save to cache (if enabled)
+                if self.enable_cache:
+                    try:
+                        tile.save(cache_path, format="PNG")
+                    except Exception as e:
+                        logger.warning(f"Error saving tile to cache {cache_path}: {e}")
 
                 # Upsample if needed using bilinear interpolation
                 if needs_upsampling:
@@ -219,8 +227,8 @@ class TileCompositor:
         """
         cache_path = self._get_cache_path(url)
 
-        # Check cache first
-        if cache_path.exists():
+        # Check cache first (if enabled)
+        if self.enable_cache and cache_path.exists():
             try:
                 tile = Image.open(cache_path).convert("RGBA")
 
@@ -241,11 +249,12 @@ class TileCompositor:
                     data = await response.read()
                     tile = Image.open(io.BytesIO(data)).convert("RGBA")
 
-                    # Save to cache
-                    try:
-                        tile.save(cache_path, format="PNG")
-                    except Exception as e:
-                        logger.warning(f"Error saving tile to cache {cache_path}: {e}")
+                    # Save to cache (if enabled)
+                    if self.enable_cache:
+                        try:
+                            tile.save(cache_path, format="PNG")
+                        except Exception as e:
+                            logger.warning(f"Error saving tile to cache {cache_path}: {e}")
 
                     # Upsample if needed using bilinear interpolation
                     if needs_upsampling:

@@ -17,6 +17,7 @@ class GenerationRequest:
     extent: Extent
     output_path: Path
     web_compatible: bool = False
+    include_timestamp: bool = True
 
     def __post_init__(self):
         """Validate the generation request."""
@@ -58,4 +59,5 @@ class GenerationRequest:
             extent=self.extent.copy(),
             output_path=Path(self.output_path),
             web_compatible=self.web_compatible,
+            include_timestamp=self.include_timestamp,
         )
