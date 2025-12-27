@@ -1,4 +1,4 @@
-"""Snapshot testing utilities for KMZ and MBTiles file comparison."""
+"""Snapshot testing utilities for KMZ, MBTiles, and GeoTIFF file comparison."""
 
 import difflib
 import hashlib
@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from osgeo import gdal
 
 # Directory to store snapshot files
 SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
@@ -245,6 +246,147 @@ def compare_mbtiles(mbtiles1: Path, mbtiles2: Path) -> list[str]:
     return differences
 
 
+def extract_geotiff_data(geotiff_path: Path) -> dict:
+    """Extract GeoTIFF metadata and raster data hash for comparison.
+
+    Args:
+        geotiff_path: Path to .tif file
+
+    Returns:
+        Dictionary with:
+            - dimensions: (width, height)
+            - band_count: Number of bands
+            - projection: CRS WKT string
+            - geotransform: 6-element tuple
+            - overview_count: Number of overviews in first band
+            - compression: Compression type (from IMAGE_STRUCTURE metadata)
+            - raster_hash: Hash of raster data
+            - metadata: Dict of metadata items
+    """
+    dataset = gdal.Open(str(geotiff_path))
+    if dataset is None:
+        raise ValueError(f"Failed to open GeoTIFF: {geotiff_path}")
+
+    # Extract dimensions
+    width = dataset.RasterXSize
+    height = dataset.RasterYSize
+    band_count = dataset.RasterCount
+
+    # Extract projection
+    projection = dataset.GetProjection()
+
+    # Extract geotransform (round to avoid floating point precision issues)
+    geotransform = tuple(round(x, 6) for x in dataset.GetGeoTransform())
+
+    # Extract compression from IMAGE_STRUCTURE metadata
+    image_metadata = dataset.GetMetadata('IMAGE_STRUCTURE')
+    compression = image_metadata.get('COMPRESSION', 'None')
+
+    # Extract overview count from first band
+    band = dataset.GetRasterBand(1)
+    overview_count = band.GetOverviewCount()
+
+    # Hash raster data for comparison (sample from first band to avoid large memory usage)
+    # Sample 10 rows evenly distributed
+    sample_rows = min(10, height)
+    row_indices = [int(i * height / sample_rows) for i in range(sample_rows)]
+
+    raster_hash = hashlib.sha256()
+    for row_idx in row_indices:
+        row_data = band.ReadAsArray(0, row_idx, width, 1)
+        if row_data is not None:
+            raster_hash.update(row_data.tobytes())
+
+    # Extract metadata
+    metadata = {}
+    metadata_dict = dataset.GetMetadata()
+    if metadata_dict:
+        metadata = dict(metadata_dict)
+
+    dataset = None  # Close dataset
+
+    return {
+        "dimensions": (width, height),
+        "band_count": band_count,
+        "projection": projection,
+        "geotransform": geotransform,
+        "compression": compression,
+        "overview_count": overview_count,
+        "raster_hash": raster_hash.hexdigest()[:16],  # First 16 chars
+        "metadata": metadata,
+    }
+
+
+def compare_geotiff(geotiff1: Path, geotiff2: Path) -> list[str]:
+    """Compare two GeoTIFF files and return list of differences.
+
+    Args:
+        geotiff1: Path to first GeoTIFF (snapshot)
+        geotiff2: Path to second GeoTIFF (current)
+
+    Returns:
+        List of difference messages
+    """
+    differences = []
+
+    # Extract data from both GeoTIFFs
+    data1 = extract_geotiff_data(geotiff1)
+    data2 = extract_geotiff_data(geotiff2)
+
+    # Compare dimensions
+    if data1["dimensions"] != data2["dimensions"]:
+        differences.append(f"DIFF dimensions: snapshot={data1['dimensions']}, current={data2['dimensions']}")
+
+    # Compare band count
+    if data1["band_count"] != data2["band_count"]:
+        differences.append(f"DIFF band count: snapshot={data1['band_count']}, current={data2['band_count']}")
+
+    # Compare compression
+    if data1["compression"] != data2["compression"]:
+        differences.append(f"DIFF compression: snapshot={data1['compression']}, current={data2['compression']}")
+
+    # Compare projection
+    if data1["projection"] != data2["projection"]:
+        differences.append("DIFF projection:")
+        differences.append(f"  Snapshot: {data1['projection'][:100]}...")
+        differences.append(f"  Current:  {data2['projection'][:100]}...")
+
+    # Compare geotransform
+    if data1["geotransform"] != data2["geotransform"]:
+        differences.append("DIFF geotransform:")
+        differences.append(f"  Snapshot: {data1['geotransform']}")
+        differences.append(f"  Current:  {data2['geotransform']}")
+
+    # Compare overview count
+    if data1["overview_count"] != data2["overview_count"]:
+        differences.append(f"DIFF overview count: snapshot={data1['overview_count']}, current={data2['overview_count']}")
+
+    # Compare raster data hash
+    if data1["raster_hash"] != data2["raster_hash"]:
+        differences.append(f"DIFF raster data: snapshot_hash={data1['raster_hash']}, current_hash={data2['raster_hash']}")
+
+    # Compare metadata
+    metadata1 = data1["metadata"]
+    metadata2 = data2["metadata"]
+
+    keys1 = set(metadata1.keys())
+    keys2 = set(metadata2.keys())
+
+    for key in sorted(keys1 - keys2):
+        differences.append(f"MISSING metadata in current: {key} = {metadata1[key]}")
+
+    for key in sorted(keys2 - keys1):
+        differences.append(f"EXTRA metadata in current: {key} = {metadata2[key]}")
+
+    for key in sorted(keys1 & keys2):
+        if metadata1[key] != metadata2[key]:
+            differences.append(f"DIFF metadata '{key}':")
+            differences.append(f"  Snapshot: {metadata1[key]}")
+            differences.append(f"  Current:  {metadata2[key]}")
+
+    return differences
+
+
 class SnapshotAssertion:
     """Context manager for snapshot assertions supporting KMZ and MBTiles formats."""
 
@@ -256,10 +398,10 @@ class SnapshotAssertion:
 
     def assert_match(self, file_path: Path) -> None:
         """
-        Assert that file matches snapshot (supports KMZ and MBTiles).
+        Assert that file matches snapshot (supports KMZ, MBTiles, and GeoTIFF).
 
         Args:
-            file_path: Path to generated file (KMZ or MBTiles)
+            file_path: Path to generated file (KMZ, MBTiles, or GeoTIFF)
 
         Raises:
             AssertionError: If file doesn't match snapshot
@@ -269,8 +411,8 @@ class SnapshotAssertion:
 
         # Detect file type and set snapshot path
         file_ext = file_path.suffix.lower()
-        if file_ext not in [".kmz", ".mbtiles"]:
-            raise AssertionError(f"Unsupported file type: {file_ext} (must be .kmz or .mbtiles)")
+        if file_ext not in [".kmz", ".mbtiles", ".tif", ".tiff"]:
+            raise AssertionError(f"Unsupported file type: {file_ext} (must be .kmz, .mbtiles, or .tif/.tiff)")
 
         self.snapshot_path = SNAPSHOTS_DIR / f"{self.test_name}{file_ext}"
 
@@ -299,6 +441,8 @@ class SnapshotAssertion:
             self._compare_kmz(file_path)
         elif file_ext == ".mbtiles":
             self._compare_mbtiles(file_path)
+        elif file_ext in [".tif", ".tiff"]:
+            self._compare_geotiff(file_path)
 
         if self.differences:
             error_msg = f"\n{'=' * 70}\nSnapshot mismatch for {self.test_name}\n{'=' * 70}\n"
@@ -328,3 +472,8 @@ class SnapshotAssertion:
         """Compare MBTiles files by comparing database contents."""
         assert self.snapshot_path is not None, "snapshot_path must be set before comparing"
         self.differences = compare_mbtiles(self.snapshot_path, mbtiles_path)
+
+    def _compare_geotiff(self, geotiff_path: Path) -> None:
+        """Compare GeoTIFF files by comparing metadata and raster data."""
+        assert self.snapshot_path is not None, "snapshot_path must be set before comparing"
+        self.differences = compare_geotiff(self.snapshot_path, geotiff_path)

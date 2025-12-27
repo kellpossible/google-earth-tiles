@@ -22,6 +22,7 @@ from src.models.output_config import OutputConfig
 from src.outputs import get_output_handler
 
 if TYPE_CHECKING:
+    from src.gui.output_options.geotiff_options_widget import GeoTIFFOptionsWidget
     from src.gui.output_options.kmz_options_widget import KMZOptionsWidget
     from src.gui.output_options.mbtiles_options_widget import MBTilesOptionsWidget
 
@@ -49,7 +50,7 @@ class OutputItemWidget(QFrame):
         self.layer_compositions: list[LayerComposition] = []
 
         # Current options widget
-        self.options_widget: KMZOptionsWidget | MBTilesOptionsWidget | None = None
+        self.options_widget: KMZOptionsWidget | MBTilesOptionsWidget | GeoTIFFOptionsWidget | None = None
 
         self.init_ui()
 
@@ -70,6 +71,7 @@ class OutputItemWidget(QFrame):
         self.type_combo = QComboBox()
         self.type_combo.addItem("KMZ", "kmz")
         self.type_combo.addItem("MBTiles", "mbtiles")
+        self.type_combo.addItem("GeoTIFF", "geotiff")
         # Set to the actual output type from config
         index = self.type_combo.findData(self.output_config.output_type)
         if index >= 0:
@@ -153,7 +155,7 @@ class OutputItemWidget(QFrame):
 
             # Replace extension only if it's a recognized output extension
             current_ext = current_path.suffix.lower().lstrip(".")
-            recognized_extensions = ["kmz", "mbtiles"]
+            recognized_extensions = ["kmz", "mbtiles", "tif", "tiff"]
 
             if current_ext in recognized_extensions or not current_ext:
                 # Replace or add the correct extension

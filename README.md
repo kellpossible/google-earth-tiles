@@ -4,13 +4,22 @@ A tile map generator with GUI and CLI modes for creating raster map files from W
 
 ## Features
 
-- **Multiple output formats**: KMZ (Google Earth) and MBTiles (standard tile database)
+- **Multiple output formats**: KMZ (Google Earth), MBTiles (standard tile database), and GeoTIFF (georeferenced raster)
 - **Interactive GUI**: Map-based extent selection with real-time preview
 - **Multi-layer support**: Composite multiple layers with opacity and blend modes
 - **Custom tile sources**: Add your own WMTS/XYZ tile servers
 - **CLI automation**: YAML-based configuration for batch processing
 
 ## Installation
+
+### System Requirements
+
+**GDAL** (for GeoTIFF output support):
+- **macOS**: `brew install gdal`
+- **Ubuntu/Debian**: `sudo apt-get install gdal-bin libgdal-dev`
+- **Windows**: Download from [GISInternals](https://www.gisinternals.com/release.php) or use [OSGeo4W](https://trac.osgeo.org/osgeo4w/)
+
+### Install with uv
 
 Requires [uv](https://github.com/astral-sh/uv).
 
@@ -31,7 +40,7 @@ uv run google-earth-tiles
 1. Select layers and configure properties (opacity, blend mode, export mode)
 2. Draw extent rectangle on the map
 3. Set zoom levels (2-18)
-4. Add output configurations (KMZ or MBTiles)
+4. Add output configurations (KMZ, MBTiles, or GeoTIFF)
 5. Generate
 
 ### CLI Mode
@@ -79,6 +88,12 @@ outputs:
     image_format: png
     export_mode: composite
     metadata_type: baselayer
+
+  - type: geotiff
+    path: output.tif
+    compression: lzw
+    export_mode: composite
+    multi_zoom: true  # Include pyramids for all zoom levels
 ```
 
 ### Custom Layer Sources
@@ -111,6 +126,22 @@ layer_sources:
 - Separate mode: One database per layer (`output_{layer_id}.mbtiles`)
 - PNG or JPEG tile encoding
 - Full metadata control (name, description, attribution, type)
+
+### GeoTIFF
+
+- EPSG:3857 (Web Mercator) coordinate reference system
+- Composite mode: All layers in single GeoTIFF
+- Separate mode: One GeoTIFF per layer (`output_{layer_id}.tif`)
+- Compression: LZW (default), DEFLATE, JPEG, or None
+- Multi-zoom pyramids: Optional internal overviews for efficient multi-scale viewing
+- Tiled format: Optimized for large rasters with 256×256 pixel internal tiles
+- BigTIFF: Automatic support for files >4GB
+
+Options:
+- `compression`: `lzw` (default), `deflate`, `jpeg`, `none`
+- `export_mode`: `composite` (default), `separate`
+- `multi_zoom`: `true` (default) to include pyramids, `false` for single zoom level
+- `jpeg_quality`: 1-100 (default: 80, only for JPEG compression)
 
 ## Development
 

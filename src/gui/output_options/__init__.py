@@ -1,5 +1,6 @@
 """Output format-specific option widgets."""
 
+from src.gui.output_options.geotiff_options_widget import GeoTIFFOptionsWidget
 from src.gui.output_options.kmz_options_widget import KMZOptionsWidget
 from src.gui.output_options.mbtiles_options_widget import MBTilesOptionsWidget
 
@@ -7,6 +8,7 @@ from src.gui.output_options.mbtiles_options_widget import MBTilesOptionsWidget
 OUTPUT_OPTION_WIDGETS = {
     "kmz": KMZOptionsWidget,
     "mbtiles": MBTilesOptionsWidget,
+    "geotiff": GeoTIFFOptionsWidget,
 }
 
 
@@ -30,6 +32,7 @@ def get_options_widget(output_type: str):
 __all__ = [
     "KMZOptionsWidget",
     "MBTilesOptionsWidget",
+    "GeoTIFFOptionsWidget",
     "OUTPUT_OPTION_WIDGETS",
     "get_options_widget",
 ]

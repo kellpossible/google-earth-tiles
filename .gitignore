@@ -7,9 +7,12 @@ wheels/
 *.egg-info
 *.kmz
 *.mbtiles
+*.tif
+*.tiff
 # Allow snapshot files for testing
 !tests/snapshots/*.kmz
 !tests/snapshots/*.mbtiles
+!tests/snapshots/*.tif
 
 # Output files
 output/
