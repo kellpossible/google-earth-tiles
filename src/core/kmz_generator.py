@@ -182,6 +182,8 @@ class KMZGenerator(BaseTileGenerator):
         layer_compositions: list[LayerComposition],
         web_compatible: bool = False,
         include_timestamp: bool = True,
+        name: str | None = None,
+        description: str | None = None,
         attribution: str | None = None,
         attribution_mode: str = "description",
     ) -> Path:
@@ -248,7 +250,7 @@ class KMZGenerator(BaseTileGenerator):
 
             logger.info(f"Web compatible mode: Using zoom {actual_zoom} (range: {min_zoom}-{max_zoom})")
 
-            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions, include_timestamp, attribution, attribution_mode)
+            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions, include_timestamp, name, description, attribution, attribution_mode)
 
         # Separate layers by export mode (handles single-layer special case)
         composited_layers, separate_layers = self.separate_layers_by_export_mode(layer_compositions)
@@ -257,13 +259,19 @@ class KMZGenerator(BaseTileGenerator):
             raise ValueError("No enabled layers to export")
 
         # Set document metadata
-        if min_zoom < max_zoom:
+        if name:
+            self.kml.document.name = name
+        elif min_zoom < max_zoom:
             self.kml.document.name = f"GSI Tiles - Zoom {min_zoom}-{max_zoom} (LOD)"
         else:
             self.kml.document.name = f"GSI Tiles - Zoom {max_zoom}"
 
         # Build description (conditionally include attribution based on mode)
         description_parts = []
+
+        # Add user description if provided
+        if description:
+            description_parts.append(description)
 
         # Add attribution to description only if mode is "description"
         if attribution_mode == "description":
@@ -422,6 +430,8 @@ class KMZGenerator(BaseTileGenerator):
         layer_compositions: list[LayerComposition],
         web_compatible: bool = False,
         include_timestamp: bool = True,
+        name: str | None = None,
+        description: str | None = None,
         attribution: str | None = None,
         attribution_mode: str = "description",
     ) -> Path:
@@ -443,7 +453,7 @@ class KMZGenerator(BaseTileGenerator):
         """
         # Run async version (Python 3.14 compatible)
         return asyncio.run(
-            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, attribution, attribution_mode)
+            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, name, description, attribution, attribution_mode)
         )
 
     def _add_composited_tiles(
@@ -697,7 +707,7 @@ class KMZGenerator(BaseTileGenerator):
         return canvas
 
     async def _create_kmz_web_compatible(
-        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition], include_timestamp: bool = True, attribution: str | None = None, attribution_mode: str = "description"
+        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition], include_timestamp: bool = True, name: str | None = None, description: str | None = None, attribution: str | None = None, attribution_mode: str = "description"
     ) -> Path:
         """
         Create web-compatible KMZ with merged chunks.
@@ -714,10 +724,17 @@ class KMZGenerator(BaseTileGenerator):
         composited_layers, separate_layers = self.separate_layers_by_export_mode(layer_compositions)
 
         # Set document metadata
-        self.kml.document.name = f"GSI Tiles - Zoom {zoom} (Web Compatible)"
+        if name:
+            self.kml.document.name = name
+        else:
+            self.kml.document.name = f"GSI Tiles - Zoom {zoom} (Web Compatible)"
 
         # Build description (conditionally include attribution based on mode)
         description_parts = []
+
+        # Add user description if provided
+        if description:
+            description_parts.append(description)
 
         # Add attribution to description only if mode is "description"
         if attribution_mode == "description":

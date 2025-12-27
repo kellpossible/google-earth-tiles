@@ -56,6 +56,8 @@ class KMZOutputHandler:
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions to include
             progress_callback: Optional callback for progress updates
+            name: Document name/title (optional, uses default based on zoom if None)
+            description: Document description (optional, shown in KML description)
             attribution: Global attribution string (optional, auto-generates from layers if None)
             **options: KMZ-specific options:
                 - web_compatible (bool): Enable web compatible mode (default: False)
@@ -71,7 +73,7 @@ class KMZOutputHandler:
 
         generator = KMZGenerator(output_path, progress_callback)
         return generator.create_kmz(
-            extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, attribution, attribution_mode
+            extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, name, description, attribution, attribution_mode
         )
 
     def estimate_tiles(
