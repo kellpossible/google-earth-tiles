@@ -23,6 +23,9 @@ class ExtentConfig:
     # Cached resolved extent (calculated from KML + padding)
     _resolved_extent: Extent | None = None
 
+    # Cached metadata extracted from KML file
+    _extracted_metadata: dict[str, str | None] | None = None
+
     def get_extent(self) -> Extent:
         """
         Get the resolved extent for this configuration.
@@ -41,6 +44,22 @@ class ExtentConfig:
             if self._resolved_extent is None:
                 raise ValueError("File-based extent not yet resolved")
             return self._resolved_extent
+
+    def get_extracted_metadata(self) -> dict[str, str | None]:
+        """
+        Get metadata extracted from KML file.
+
+        Returns:
+            Dictionary with 'name' and 'description' keys (values can be None)
+            Empty dict if mode is not 'file' or no extraction performed
+        """
+        if self.mode != "file":
+            return {}
+
+        if self._extracted_metadata is None:
+            return {}
+
+        return self._extracted_metadata
 
     def to_dict(self) -> dict:
         """

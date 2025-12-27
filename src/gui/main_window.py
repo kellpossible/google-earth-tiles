@@ -112,10 +112,15 @@ class ExportWorker(QThread):
 class MainWindow(QMainWindow):
     """Main application window."""
 
-    def __init__(self):
-        """Initialize main window."""
+    def __init__(self, config_file: str | None = None):
+        """Initialize main window.
+
+        Args:
+            config_file: Optional path to config file to load on startup
+        """
         super().__init__()
         self.export_worker = None
+        self.initial_config_file = config_file
 
         # File operations handler
         self.file_ops = FileOperations(self)
@@ -129,6 +134,7 @@ class MainWindow(QMainWindow):
         self.map_update_timer.timeout.connect(self._do_map_update_no_zoom)
         self.map_refresh_in_progress = False
         self.pending_refresh_needed = False
+        self._initial_config_loaded = False  # Track if initial config has been loaded
 
         self.init_ui()
 
@@ -155,6 +161,7 @@ class MainWindow(QMainWindow):
 
         # Right side: Settings panel (30% width)
         self.settings_panel = SettingsPanel()
+        self.settings_panel.file_operations = self.file_ops  # Link file operations for path resolution
         self.settings_panel.setMaximumWidth(500)
         main_layout.addWidget(self.settings_panel, 3)
 
@@ -185,6 +192,9 @@ class MainWindow(QMainWindow):
 
         # Connect state change tracking
         self.settings_panel.state_changed.connect(self._on_state_changed)
+
+        # Connect map initialization signal for loading initial config
+        self.map_widget.map_initialized.connect(self._on_map_initialized)
 
         # Trigger initial map update with default layer
         self._update_map_preview()
@@ -504,6 +514,38 @@ class MainWindow(QMainWindow):
         """Clear the recent files list."""
         self.file_ops.clear_recent_files()
         self._update_recent_files_menu()
+
+    def _load_initial_config(self):
+        """Load initial config file provided via command line."""
+        from pathlib import Path
+
+        try:
+            file_path = Path(self.initial_config_file)
+            if not file_path.exists():
+                from PyQt6.QtWidgets import QMessageBox
+
+                QMessageBox.warning(
+                    self, "File Not Found", f"Config file not found: {self.initial_config_file}\n\nStarting with empty config."
+                )
+                return
+
+            # Load file and update UI on success
+            if self.file_ops._do_open(file_path, self.settings_panel.load_state_dict):
+                self._update_window_title()
+                self._update_recent_files_menu()
+
+        except Exception:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.exception("Error loading initial config file")
+
+    def _on_map_initialized(self):
+        """Handle map widget initialization completion."""
+        # Load initial config file if provided
+        if self.initial_config_file and not self._initial_config_loaded:
+            self._initial_config_loaded = True
+            self._load_initial_config()
 
     def closeEvent(self, a0: QtGui.QCloseEvent | None) -> None:
         """

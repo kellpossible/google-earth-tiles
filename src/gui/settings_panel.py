@@ -1353,6 +1353,7 @@ class SettingsPanel(QWidget):
 
         # Suppress state changes during load
         self._suppress_state_changes = True
+        extent = None  # Initialize to avoid UnboundLocalError in finally block
 
         try:
             # 1. Clear existing layers
@@ -1431,8 +1432,9 @@ class SettingsPanel(QWidget):
             self._update_generate_button()
             self.changed.emit()  # Update map preview
 
-            # Emit signal to set extent on map
-            self.extent_loaded.emit(extent)
+            # Emit signal to set extent on map (only if extent was loaded successfully)
+            if extent is not None:
+                self.extent_loaded.emit(extent)
 
     def _clear_all_layers(self) -> None:
         """Clear all layers from the composition."""

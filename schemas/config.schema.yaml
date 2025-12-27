@@ -101,6 +101,11 @@ properties:
       - "null"
     description: Optional attribution text for the tileset. Overrides default layer attribution if provided.
 
+  extract_extent_metadata:
+    type: boolean
+    default: false
+    description: "Extract name and description metadata from KML extent file when extent.type is 'file'. Config-level name and description override extracted values."
+
   outputs:
     type: array
     minItems: 1
@@ -135,6 +140,10 @@ properties:
             - overlay
           default: description
           description: "KMZ only: How to display attribution - in description or as overlay"
+        merge_extent_kml:
+          type: boolean
+          default: false
+          description: "KMZ only: Merge entire KML structure from extent file into generated KMZ. Only works when extent.type is 'file' and extent file is KML format."
 
         # MBTiles-specific options
         image_format:

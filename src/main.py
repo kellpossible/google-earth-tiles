@@ -92,6 +92,51 @@ def cmd_download(args):
     return 1 if failed_files else 0
 
 
+def launch_gui(config_file: str | None = None):
+    """
+    Launch the GUI application.
+
+    Args:
+        config_file: Optional path to config file to load on startup
+    """
+    import signal
+
+    from PyQt6.QtCore import QByteArray, QTimer
+    from PyQt6.QtWebEngineCore import QWebEngineUrlScheme
+    from PyQt6.QtWidgets import QApplication
+
+    from src.gui.main_window import MainWindow
+
+    # Register custom URL scheme BEFORE creating QApplication
+    scheme = QWebEngineUrlScheme(QByteArray(b"preview"))
+    scheme.setFlags(QWebEngineUrlScheme.Flag.LocalScheme | QWebEngineUrlScheme.Flag.LocalAccessAllowed)
+    QWebEngineUrlScheme.registerScheme(scheme)
+
+    # Create QApplication for GUI
+    app = QApplication(sys.argv)
+    _set_app_metadata(app)
+
+    # Set up Ctrl+C handling
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+    # Create a timer to allow Python to process signals
+    # This is necessary for Ctrl+C to work with Qt
+    timer = QTimer()
+    timer.timeout.connect(lambda: None)  # No-op, just lets Python process signals
+    timer.start(500)  # Check every 500ms
+
+    # Create window with optional config file
+    window = MainWindow(config_file=config_file)
+    window.show()
+
+    sys.exit(app.exec())
+
+
+def cmd_open(args):
+    """Handle open subcommand - launch GUI with config file loaded."""
+    launch_gui(config_file=args.config)
+
+
 def cmd_list_layers(args):
     """Handle list-layers subcommand."""
     from src.core.config import LAYERS
@@ -186,6 +231,11 @@ def main():
     )
     download_parser.set_defaults(func=cmd_download)
 
+    # Open subcommand (launch GUI with file)
+    open_parser = subparsers.add_parser("open", help="Open config file in GUI")
+    open_parser.add_argument("config", help="YAML configuration file to open")
+    open_parser.set_defaults(func=cmd_open)
+
     # List layers subcommand
     list_parser = subparsers.add_parser("list-layers", help="List available WMTS layers")
     list_parser.set_defaults(func=cmd_list_layers)
@@ -201,38 +251,13 @@ def main():
 
     # If no subcommand provided, launch GUI
     if args.command is None:
-        import signal
-
-        from PyQt6.QtCore import QByteArray, QTimer
-        from PyQt6.QtWebEngineCore import QWebEngineUrlScheme
-        from PyQt6.QtWidgets import QApplication
-
-        from src.gui.main_window import MainWindow
-
-        # Register custom URL scheme BEFORE creating QApplication
-        scheme = QWebEngineUrlScheme(QByteArray(b"preview"))
-        scheme.setFlags(QWebEngineUrlScheme.Flag.LocalScheme | QWebEngineUrlScheme.Flag.LocalAccessAllowed)
-        QWebEngineUrlScheme.registerScheme(scheme)
-
-        # Create QApplication for GUI
-        app = QApplication(sys.argv)
-        _set_app_metadata(app)
-
-        # Set up Ctrl+C handling
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-
-        # Create a timer to allow Python to process signals
-        # This is necessary for Ctrl+C to work with Qt
-        timer = QTimer()
-        timer.timeout.connect(lambda: None)  # No-op, just lets Python process signals
-        timer.start(500)  # Check every 500ms
-
-        window = MainWindow()
-        window.show()
-
-        sys.exit(app.exec())
+        launch_gui()
     else:
-        # Create QCoreApplication for CLI commands to ensure proper cache/settings paths
+        # For "open" command, don't create QCoreApplication (it creates QApplication itself)
+        if args.command == "open":
+            return args.func(args)
+
+        # Create QCoreApplication for other CLI commands to ensure proper cache/settings paths
         from PyQt6.QtCore import QCoreApplication
 
         app = QCoreApplication(sys.argv)

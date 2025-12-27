@@ -177,6 +177,87 @@ class KMZGenerator(BaseTileGenerator):
 
         logger.info("Added attribution screen overlay to KML")
 
+    def _merge_extent_kml_features(self, extent_kml_path: Path):
+        """
+        Prepare KML features from extent file for merging.
+
+        Stores features in self._extent_features_to_merge for
+        post-processing after simplekml generates base KML.
+
+        Args:
+            extent_kml_path: Path to KML extent file
+        """
+        from src.utils.kml_extent import extract_kml_features
+
+        try:
+            # Extract features from extent KML
+            features = extract_kml_features(extent_kml_path)
+
+            if not features:
+                logger.warning(f"No features found in extent KML to merge: {extent_kml_path}")
+                return
+
+            # Store features for later merging (after simplekml generates base KML)
+            if not hasattr(self, "_extent_features_to_merge"):
+                self._extent_features_to_merge = []
+
+            self._extent_features_to_merge.extend(features)
+
+            logger.info(f"Prepared {len(features)} features from extent KML for merging")
+
+        except Exception as e:
+            logger.error(f"Failed to prepare extent KML features for merging: {e}")
+            # Non-fatal - continue with tile generation
+
+    def _merge_kml_features_post_save(self, kml_path: Path, features: list):
+        """
+        Merge KML features into saved KML file (post-processing).
+
+        This is necessary because simplekml doesn't support importing arbitrary
+        KML elements. We generate the base KML with simplekml, then parse and
+        enhance it with ElementTree.
+
+        Args:
+            kml_path: Path to KML file saved by simplekml
+            features: List of ElementTree Elements to merge
+        """
+        import xml.etree.ElementTree as ET
+
+        from src.utils.kml_extent import KML_NS
+
+        try:
+            # Parse the simplekml-generated KML
+            tree = ET.parse(kml_path)
+            root = tree.getroot()
+
+            # Find the Document element
+            doc = root.find(".//kml:Document", KML_NS)
+            if doc is None:
+                logger.error("No Document element found in generated KML")
+                return
+
+            # Create a Folder for extent features
+            extent_folder = ET.SubElement(doc, f"{{{KML_NS['kml']}}}Folder")
+            name_elem = ET.SubElement(extent_folder, f"{{{KML_NS['kml']}}}name")
+            name_elem.text = "Extent Boundary"
+
+            # Add all features to the folder
+            for feature in features:
+                extent_folder.append(feature)
+
+            # Write back with XML declaration and proper formatting
+            tree.write(
+                kml_path,
+                encoding="UTF-8",
+                xml_declaration=True,
+                method="xml",
+            )
+
+            logger.info(f"Merged {len(features)} features into KML")
+
+        except Exception as e:
+            logger.error(f"Failed to merge KML features post-save: {e}")
+
     async def create_kmz_async(
         self,
         extent: Extent,
@@ -412,6 +493,11 @@ class KMZGenerator(BaseTileGenerator):
 
             # Save KML
             self.kml.save(str(kml_temp_path))
+
+            # Merge extent KML features if requested
+            if hasattr(self, "_extent_features_to_merge") and self._extent_features_to_merge:
+                self._merge_kml_features_post_save(kml_temp_path, self._extent_features_to_merge)
+                self._extent_features_to_merge = []
 
             # Phase 4: Create KMZ archive
             if self.progress_callback:
@@ -902,6 +988,11 @@ class KMZGenerator(BaseTileGenerator):
 
             # Save KML
             self.kml.save(str(kml_temp_path))
+
+            # Merge extent KML features if requested
+            if hasattr(self, "_extent_features_to_merge") and self._extent_features_to_merge:
+                self._merge_kml_features_post_save(kml_temp_path, self._extent_features_to_merge)
+                self._extent_features_to_merge = []
 
             # Phase 4: Create KMZ archive
             self._create_kmz_archive_chunks(kml_temp_path, composited_chunks, separate_chunks_by_layer, zoom)

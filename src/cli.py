@@ -123,6 +123,22 @@ def run_cli(config_path: str) -> int:
                 logger.info(f"Loaded extent from KML: {extent_config.file_path}")
                 if extent_config.padding_meters > 0:
                     logger.info(f"Applied padding: {extent_config.padding_meters} meters")
+
+                # Extract metadata if requested
+                extract_metadata = config.get("extract_extent_metadata", False)
+                if extract_metadata:
+                    from src.utils.kml_extent import extract_metadata_from_kml
+
+                    extracted = extract_metadata_from_kml(extent_config.file_path)
+                    extent_config._extracted_metadata = extracted
+
+                    # Log what was extracted
+                    if extracted.get("name"):
+                        logger.info(f"Extracted name from KML: {extracted['name']}")
+                    if extracted.get("description"):
+                        desc_preview = extracted["description"][:50]
+                        logger.info(f"Extracted description from KML: {desc_preview}...")
+
             except FileNotFoundError as e:
                 logger.error(str(e))
                 return 1
@@ -163,10 +179,19 @@ def run_cli(config_path: str) -> int:
         min_zoom = config["min_zoom"]
         max_zoom = config["max_zoom"]
 
-        # Global metadata (optional)
-        name = config.get("name")
-        description = config.get("description")
+        # Global metadata (optional) with extraction support
+        config_name = config.get("name")
+        config_description = config.get("description")
         attribution = config.get("attribution")
+
+        # Apply metadata hierarchy: config overrides extracted
+        if extent_config.mode == "file" and config.get("extract_extent_metadata", False):
+            extracted = extent_config.get_extracted_metadata()
+            name = config_name if config_name is not None else extracted.get("name")
+            description = config_description if config_description is not None else extracted.get("description")
+        else:
+            name = config_name
+            description = config_description
 
         include_timestamp = config.get("include_timestamp", True)
         enable_cache = config.get("enable_cache", True)
@@ -240,6 +265,7 @@ def run_cli(config_path: str) -> int:
                 name=name,
                 description=description,
                 attribution=attribution,
+                extent_config=extent_config,
                 include_timestamp=include_timestamp,
                 **output_config.options,
             )

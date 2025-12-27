@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kellpossible/google-earth-tiles/main/schemas/config.schema.yaml
+
+extent:
+  type: latlon
+  min_lon: 138.69466781616214
+  min_lat: 35.34215478225168
+  max_lon: 138.76685142517093
+  max_lat: 35.38373188305743
+min_zoom: 12
+max_zoom: 16
+name: null
+description: null
+attribution: null
+outputs:
+- type: mbtiles
+  path: asahidake.mbtiles
+  image_format: png
+  jpeg_quality: 80
+  export_mode: composite
+  metadata_type: baselayer
+- type: kmz
+  path: asahidake.kmz
+  web_compatible: false
+  attribution_mode: description
+- type: geotiff
+  path: asahidake.tiff
+  compression: lzw
+  jpeg_quality: 80
+  export_mode: composite
+  multi_zoom: false
+  tiled: true
+  tile_size: 256
+layers:
+- name: std
+  opacity: 100
+  blend_mode: normal
+- name: hillshademap
+  opacity: 69
+  blend_mode: multiply
+  lod_mode: select_zooms
+  selected_zooms:
+  - 15
+  - 16

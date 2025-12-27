@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Complex Study Area</name>
+    <description>Study area with styles and multiple features</description>
+    <Style id="boundaryStyle">
+      <LineStyle>
+        <color>ff0000ff</color>
+        <width>2</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>660000ff</color>
+      </PolyStyle>
+    </Style>
+    <Folder>
+      <name>Study Boundaries</name>
+      <Placemark>
+        <name>Main Area</name>
+        <styleUrl>#boundaryStyle</styleUrl>
+        <Polygon>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>
+                139.69,35.67,0
+                139.71,35.67,0
+                139.71,35.69,0
+                139.69,35.69,0
+                139.69,35.67,0
+              </coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </Placemark>
+    </Folder>
+    <Placemark>
+      <name>Point of Interest</name>
+      <Point>
+        <coordinates>139.70,35.68,0</coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>

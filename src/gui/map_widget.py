@@ -61,6 +61,7 @@ class MapWidget(QWidget):
     extent_changed = pyqtSignal(object)  # Extent object
     extent_cleared = pyqtSignal()  # Emitted when extent is cleared
     preview_zoom_changed = pyqtSignal(int)  # Emitted when preview zoom changes
+    map_initialized = pyqtSignal()  # Emitted when map is fully loaded and ready
 
     # Class variable for URL scheme handler
     _scheme_handler = None
@@ -69,6 +70,7 @@ class MapWidget(QWidget):
         """Initialize map widget."""
         super().__init__()
         self.current_zoom = DEFAULT_MAP_ZOOM
+        self._is_initialized = False
         self.bridge = MapBridge()
         self.bridge.extent_changed.connect(self._on_extent_received)
         self.bridge.extent_cleared.connect(self._on_extent_cleared)
@@ -103,6 +105,9 @@ class MapWidget(QWidget):
         self.channel = QWebChannel()
         self.channel.registerObject("bridge", self.bridge)
         self.web_view.page().setWebChannel(self.channel)
+
+        # Connect to loadFinished to emit initialization signal
+        self.web_view.loadFinished.connect(self._on_load_finished)
 
         layout.addWidget(self.web_view)
         self.setLayout(layout)
@@ -214,6 +219,17 @@ class MapWidget(QWidget):
         """
         self.current_zoom = zoom
         self.preview_zoom_changed.emit(zoom)
+
+    def _on_load_finished(self, success: bool):
+        """
+        Handle map page load finished.
+
+        Args:
+            success: Whether the page loaded successfully
+        """
+        if success and not self._is_initialized:
+            self._is_initialized = True
+            self.map_initialized.emit()
 
     def set_preview_zoom(self, zoom: int):
         """

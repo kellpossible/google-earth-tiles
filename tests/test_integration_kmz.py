@@ -542,3 +542,181 @@ def test_resampling_validation(tile_server):
         # Zoom 15: BLUE (native)
         assert 15 in zoom_colors, "No tiles at zoom 15"
         assert zoom_colors[15] == (0, 0, 255), f"Zoom 15 should be RGB(0, 0, 255), got RGB{zoom_colors[15]}"
+
+
+def test_extract_metadata_from_kml_extent(snapshot):
+    """Test extracting metadata from KML extent file."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Copy test KML to temp directory
+        test_kml = Path(__file__).parent / "fixtures" / "test_extent_with_metadata.kml"
+        extent_kml = temp_path / "extent.kml"
+        import shutil
+
+        shutil.copy(test_kml, extent_kml)
+
+        config = {
+            "extent": {"type": "file", "file": str(extent_kml)},
+            "extract_extent_metadata": True,
+            "min_zoom": 12,
+            "max_zoom": 12,
+            "layers": ["std"],
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
+            "include_timestamp": False,
+        }
+
+        config_path = temp_path / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        # Run CLI
+        exit_code = run_cli(str(config_path))
+        assert exit_code == 0
+
+        # Verify KMZ was created
+        assert (temp_path / "output.kmz").exists()
+
+        # Extract and verify KML contains extracted metadata
+        import zipfile
+
+        with zipfile.ZipFile(temp_path / "output.kmz", "r") as kmz:
+            kml_content = kmz.read("doc.kml").decode("utf-8")
+
+            # Should contain the extracted name from KML
+            assert "Test Study Area" in kml_content
+
+
+def test_extract_metadata_config_override(snapshot):
+    """Test that config metadata overrides extracted metadata."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Copy test KML to temp directory
+        test_kml = Path(__file__).parent / "fixtures" / "test_extent_with_metadata.kml"
+        extent_kml = temp_path / "extent.kml"
+        import shutil
+
+        shutil.copy(test_kml, extent_kml)
+
+        config = {
+            "extent": {"type": "file", "file": str(extent_kml)},
+            "extract_extent_metadata": True,
+            "name": "Override Name",  # Config overrides extracted
+            "min_zoom": 12,
+            "max_zoom": 12,
+            "layers": ["std"],
+            "outputs": [{"type": "kmz", "path": str(temp_path / "output.kmz"), "web_compatible": False}],
+            "include_timestamp": False,
+        }
+
+        config_path = temp_path / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        # Run CLI
+        exit_code = run_cli(str(config_path))
+        assert exit_code == 0
+
+        # Extract and verify KML contains override name, not extracted name
+        import zipfile
+
+        with zipfile.ZipFile(temp_path / "output.kmz", "r") as kmz:
+            kml_content = kmz.read("doc.kml").decode("utf-8")
+
+            # Should contain the override name
+            assert "Override Name" in kml_content
+            # Should NOT contain the extracted name
+            assert "Test Study Area" not in kml_content
+
+
+def test_merge_extent_kml(snapshot):
+    """Test merging extent KML into output KMZ."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Copy test KML with features to temp directory
+        test_kml = Path(__file__).parent / "fixtures" / "test_extent_with_features.kml"
+        extent_kml = temp_path / "extent.kml"
+        import shutil
+
+        shutil.copy(test_kml, extent_kml)
+
+        config = {
+            "extent": {"type": "file", "file": str(extent_kml)},
+            "min_zoom": 12,
+            "max_zoom": 12,
+            "layers": ["std"],
+            "outputs": [
+                {"type": "kmz", "path": str(temp_path / "output.kmz"), "merge_extent_kml": True, "web_compatible": False}
+            ],
+            "include_timestamp": False,
+        }
+
+        config_path = temp_path / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        # Run CLI
+        exit_code = run_cli(str(config_path))
+        assert exit_code == 0
+
+        # Extract and verify KML contains merged features
+        import zipfile
+
+        with zipfile.ZipFile(temp_path / "output.kmz", "r") as kmz:
+            kml_content = kmz.read("doc.kml").decode("utf-8")
+
+            # Should contain the Extent Boundary folder
+            assert "Extent Boundary" in kml_content
+
+            # Should contain merged features
+            assert "Study Boundaries" in kml_content
+            assert "Main Area" in kml_content
+            assert "Point of Interest" in kml_content
+            assert "boundaryStyle" in kml_content
+
+
+def test_merge_extent_kml_web_compatible(snapshot):
+    """Test merging extent KML in web-compatible mode."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Copy test KML with features to temp directory
+        test_kml = Path(__file__).parent / "fixtures" / "test_extent_with_features.kml"
+        extent_kml = temp_path / "extent.kml"
+        import shutil
+
+        shutil.copy(test_kml, extent_kml)
+
+        config = {
+            "extent": {"type": "file", "file": str(extent_kml)},
+            "min_zoom": 12,
+            "max_zoom": 12,
+            "layers": ["std"],
+            "outputs": [
+                {"type": "kmz", "path": str(temp_path / "output.kmz"), "merge_extent_kml": True, "web_compatible": True}
+            ],
+            "include_timestamp": False,
+        }
+
+        config_path = temp_path / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        # Run CLI
+        exit_code = run_cli(str(config_path))
+        assert exit_code == 0
+
+        # Extract and verify KML contains merged features in web-compatible mode
+        import zipfile
+
+        with zipfile.ZipFile(temp_path / "output.kmz", "r") as kmz:
+            kml_content = kmz.read("doc.kml").decode("utf-8")
+
+            # Should contain the Extent Boundary folder
+            assert "Extent Boundary" in kml_content
+
+            # Should contain merged features
+            assert "Study Boundaries" in kml_content
+            assert "Main Area" in kml_content

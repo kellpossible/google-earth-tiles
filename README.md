@@ -4,6 +4,12 @@ A tile map generator with GUI and CLI modes for creating raster map files from W
 
 **WARNING**: vibe coded using claude, with only marginal code review. Use at your own risk.
 
+## Screenshots
+
+![extents](./screenshots/extents.jpeg)
+
+![layers](./screenshots/layers.jpeg)
+
 ## Features
 
 - **Multiple output formats**: KMZ (Google Earth), MBTiles (standard tile database), and GeoTIFF (georeferenced raster)

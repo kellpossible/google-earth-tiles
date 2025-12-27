@@ -1,11 +1,15 @@
 """Utility functions for calculating extents from KML files."""
 
+import copy
+import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pyproj
 
 from src.models.extent import Extent
+
+logger = logging.getLogger(__name__)
 
 # KML namespace
 KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
@@ -142,3 +146,124 @@ def calculate_extent_from_kml(kml_path: Path, padding_meters: float = 0.0) -> Ex
         extent = apply_padding_meters(extent, padding_meters)
 
     return extent
+
+
+def extract_metadata_from_kml(kml_path: Path) -> dict[str, str | None]:
+    """
+    Extract name and description metadata from KML file.
+
+    Searches for:
+    1. Document-level <name> and <description> in <Document> element
+    2. Falls back to first <Placemark> <name> and <description> if Document has none
+    3. Returns None for fields if not found
+
+    Args:
+        kml_path: Path to KML file
+
+    Returns:
+        Dictionary with 'name' and 'description' keys (values can be None)
+
+    Raises:
+        FileNotFoundError: If KML file doesn't exist
+        ValueError: If KML is invalid
+    """
+    if not kml_path.exists():
+        raise FileNotFoundError(f"KML file not found: {kml_path}")
+
+    try:
+        tree = ET.parse(kml_path)
+        root = tree.getroot()
+
+        name = None
+        description = None
+
+        # Strategy 1: Try Document-level metadata
+        doc_elem = root.find(".//kml:Document", KML_NS)
+        if doc_elem is not None:
+            name_elem = doc_elem.find("kml:name", KML_NS)
+            desc_elem = doc_elem.find("kml:description", KML_NS)
+
+            if name_elem is not None and name_elem.text:
+                name = name_elem.text.strip()
+                if not name:  # Empty string after strip
+                    name = None
+            if desc_elem is not None and desc_elem.text:
+                description = desc_elem.text.strip()
+                if not description:  # Empty string after strip
+                    description = None
+
+        # Strategy 2: Fallback to first Placemark if Document had no metadata
+        if name is None or description is None:
+            placemark = root.find(".//kml:Placemark", KML_NS)
+            if placemark is not None:
+                if name is None:
+                    name_elem = placemark.find("kml:name", KML_NS)
+                    if name_elem is not None and name_elem.text:
+                        name = name_elem.text.strip()
+                        if not name:  # Empty string after strip
+                            name = None
+
+                if description is None:
+                    desc_elem = placemark.find("kml:description", KML_NS)
+                    if desc_elem is not None and desc_elem.text:
+                        description = desc_elem.text.strip()
+                        if not description:  # Empty string after strip
+                            description = None
+
+        return {
+            "name": name,
+            "description": description,
+        }
+
+    except ET.ParseError as e:
+        raise ValueError(f"Invalid KML file: {e}") from e
+
+
+def extract_kml_features(kml_path: Path) -> list[ET.Element]:
+    """
+    Extract feature elements from KML Document for merging.
+
+    Extracts all child elements of Document except name/description:
+    - Placemarks, Folders, GroundOverlays, ScreenOverlays, etc.
+    - Styles, StyleMaps
+    - Any other KML features
+
+    Returns deep copies to prevent mutation.
+
+    Args:
+        kml_path: Path to KML file
+
+    Returns:
+        List of ElementTree Elements representing KML features
+
+    Raises:
+        FileNotFoundError: If KML file doesn't exist
+        ValueError: If KML is invalid
+    """
+    if not kml_path.exists():
+        raise FileNotFoundError(f"KML file not found: {kml_path}")
+
+    try:
+        tree = ET.parse(kml_path)
+        root = tree.getroot()
+
+        # Find Document element
+        doc_elem = root.find(".//kml:Document", KML_NS)
+
+        if doc_elem is None:
+            logger.warning(f"No Document element found in KML file: {kml_path}")
+            return []
+
+        # Extract all features (skip Document-level name/description)
+        features = []
+        skip_tags = [f"{{{KML_NS['kml']}}}name", f"{{{KML_NS['kml']}}}description"]
+
+        for child in doc_elem:
+            if child.tag not in skip_tags:
+                # Deep copy to avoid modifying original
+                features.append(copy.deepcopy(child))
+
+        return features
+
+    except ET.ParseError as e:
+        raise ValueError(f"Invalid KML file: {e}") from e

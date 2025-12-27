@@ -45,6 +45,7 @@ class KMZOutputHandler:
         name: str | None = None,
         description: str | None = None,
         attribution: str | None = None,
+        extent_config=None,
         **options,
     ) -> Path:
         """Generate a KMZ file.
@@ -59,10 +60,12 @@ class KMZOutputHandler:
             name: Document name/title (optional, uses default based on zoom if None)
             description: Document description (optional, shown in KML description)
             attribution: Global attribution string (optional, auto-generates from layers if None)
+            extent_config: ExtentConfig object (needed for KML merging, optional)
             **options: KMZ-specific options:
                 - web_compatible (bool): Enable web compatible mode (default: False)
                 - include_timestamp (bool): Include timestamp in KML (default: True)
                 - attribution_mode (str): "description" or "overlay" (default: "description")
+                - merge_extent_kml (bool): Merge extent KML into output (default: False)
 
         Returns:
             Path to the created KMZ file
@@ -70,8 +73,30 @@ class KMZOutputHandler:
         web_compatible = options.get("web_compatible", False)
         include_timestamp = options.get("include_timestamp", True)
         attribution_mode = options.get("attribution_mode", "description")
+        merge_extent_kml = options.get("merge_extent_kml", False)
 
         generator = KMZGenerator(output_path, progress_callback)
+
+        # Setup KML merging if requested
+        if merge_extent_kml and extent_config is not None:
+            if extent_config.mode == "file" and extent_config.file_path is not None:
+                # Validate it's a KML file (not KMZ)
+                if extent_config.file_path.suffix.lower() == ".kml":
+                    generator._merge_extent_kml_features(extent_config.file_path)
+                else:
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"merge_extent_kml requires extent file to be KML format, "
+                        f"got: {extent_config.file_path.suffix}"
+                    )
+            else:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning("merge_extent_kml requires extent.type='file', but extent is lat/lon mode")
+
         return generator.create_kmz(
             extent,
             min_zoom,
@@ -172,6 +197,7 @@ class KMZOutputHandler:
             "web_compatible": False,
             "include_timestamp": True,
             "attribution_mode": "description",  # "description" or "overlay"
+            "merge_extent_kml": False,
         }
 
     @staticmethod
@@ -192,3 +218,6 @@ class KMZOutputHandler:
 
         if "attribution_mode" in options and options["attribution_mode"] not in ["description", "overlay"]:
             raise ValueError("attribution_mode must be 'description' or 'overlay'")
+
+        if "merge_extent_kml" in options and not isinstance(options["merge_extent_kml"], bool):
+            raise ValueError("merge_extent_kml must be a boolean")
