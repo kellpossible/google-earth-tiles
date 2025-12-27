@@ -15,7 +15,6 @@ outputs:
 - type: mbtiles
   path: asahidake.mbtiles
   image_format: png
-  jpeg_quality: 80
   export_mode: composite
   metadata_type: baselayer
 - type: kmz
