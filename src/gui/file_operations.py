@@ -96,6 +96,10 @@ class FileOperations:
         """
         try:
             with open(file_path, "w") as f:
+                # Add YAML language server schema comment for IDE support
+                schema_url = "https://raw.githubusercontent.com/kellpossible/google-earth-tiles/main/schemas/config.schema.yaml"
+                f.write(f"# yaml-language-server: $schema={schema_url}\n\n")
+
                 yaml.dump(state, f, default_flow_style=False, sort_keys=False)
 
             self.current_file = file_path

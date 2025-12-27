@@ -47,6 +47,51 @@ def cmd_list_layers(args):
     return 0
 
 
+def cmd_schema(args):
+    """Handle schema subcommand - print configuration schema documentation."""
+    from pathlib import Path
+
+    # Get the schema file path
+    schema_path = Path(__file__).parent.parent / "schemas" / "config.schema.yaml"
+
+    if not schema_path.exists():
+        print(f"Error: Schema file not found at {schema_path}", file=sys.stderr)
+        return 1
+
+    try:
+        # If --yaml flag is provided, just print the raw YAML
+        if args.yaml:
+            with open(schema_path) as f:
+                print(f.read())
+            return 0
+
+        # Otherwise, convert to markdown and render with rich
+        import yaml
+        from jsonschema2md import Parser
+        from rich.console import Console
+        from rich.markdown import Markdown
+
+        # Read YAML schema
+        with open(schema_path) as f:
+            schema_dict = yaml.safe_load(f)
+
+        # Convert schema to markdown using jsonschema2md
+        parser = Parser()
+        md_lines = parser.parse_schema(schema_dict)
+        markdown_text = "\n".join(md_lines)
+
+        # Render markdown with rich
+        console = Console()
+        markdown = Markdown(markdown_text)
+        console.print(markdown)
+
+        return 0
+
+    except Exception as e:
+        print(f"Error generating schema documentation: {e}", file=sys.stderr)
+        return 1
+
+
 def _set_app_metadata(app):
     """
     Set organization and application metadata.
@@ -79,6 +124,11 @@ def main():
     # List layers subcommand
     list_parser = subparsers.add_parser("list-layers", help="List available WMTS layers")
     list_parser.set_defaults(func=cmd_list_layers)
+
+    # Schema subcommand
+    schema_parser = subparsers.add_parser("schema", help="Print configuration schema documentation")
+    schema_parser.add_argument("--yaml", action="store_true", help="Output raw YAML schema instead of formatted documentation")
+    schema_parser.set_defaults(func=cmd_schema)
 
     args = parser.parse_args()
 

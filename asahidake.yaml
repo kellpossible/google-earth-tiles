@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kellpossible/google-earth-tiles/main/schemas/config.schema.yaml
+
 extent:
   min_lon: 142.78347015380862
   min_lat: 43.63955371305865

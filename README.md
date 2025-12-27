@@ -2,6 +2,8 @@
 
 A tile map generator with GUI and CLI modes for creating raster map files from WMTS tile sources. Currently primarily designed for Japan GSI map data.
 
+**WARNING**: vibe coded using claude, with only marginal code review. Use at your own risk.
+
 ## Features
 
 - **Multiple output formats**: KMZ (Google Earth), MBTiles (standard tile database), and GeoTIFF (georeferenced raster)
@@ -50,66 +52,50 @@ List available layers:
 uv run google-earth-tiles list-layers
 ```
 
+View configuration schema documentation:
+```bash
+uv run google-earth-tiles schema           # Formatted markdown
+uv run google-earth-tiles schema --yaml    # Raw YAML
+```
+
 Generate from configuration:
 ```bash
 uv run google-earth-tiles download config.yaml
 ```
 
-Example configuration:
-```yaml
-extent:
-  min_lon: 139.69
-  min_lat: 35.67
-  max_lon: 139.71
-  max_lat: 35.69
+## Configuration Format
 
-min_zoom: 12
-max_zoom: 14
+See the [JSON Schema](schemas/config.schema.yaml) for the format of configuration yaml files.
 
-# Optional: Global metadata (applies to all outputs)
-name: "My Tileset"
-description: "Optional description of the tileset"
-attribution: "© Custom Attribution 2025"
+### View Schema Documentation
 
-layers:
-  - std
-  - name: ort
-    opacity: 80
-    blend_mode: multiply
+To view the complete schema documentation in your terminal:
 
-outputs:
-  - type: kmz
-    path: output.kmz
-    web_compatible: false
-    attribution_mode: description  # "description" (default) or "overlay"
-
-  - type: mbtiles
-    path: output.mbtiles
-    image_format: png
-    export_mode: composite
-    metadata_type: baselayer
-
-  - type: geotiff
-    path: output.tif
-    compression: lzw
-    export_mode: composite
-    multi_zoom: true  # Include pyramids for all zoom levels
+```bash
+uv run google-earth-tiles schema           # Pretty-printed with colors
+uv run google-earth-tiles schema --yaml    # Raw YAML (for scripting/piping)
 ```
 
-### Custom Layer Sources
+The default format displays a formatted view of all configuration options, types, and descriptions.
 
-Add custom WMTS/XYZ tile sources via configuration:
+### IDE Support
 
-```yaml
-layer_sources:
-  my_custom_layer:
-    url_template: "https://example.com/{z}/{x}/{y}.png"
-    extension: png
-    min_zoom: 0
-    max_zoom: 18
-    display_name: "Custom Layer"
-    category: "custom"
+For the best editing experience with autocomplete and validation:
+
+1. Use VS Code with the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+2. Saved configs automatically include schema reference
+3. Get real-time validation, autocomplete, and hover documentation
+
+### Schema Development
+
+When modifying the configuration structure:
+
+```bash
+just codegen  # Regenerate Pydantic models from schema
 ```
+
+- Schema: `schemas/config.schema.yaml`
+- Generated models: `src/models/generated.py`
 
 ## Output Formats
 
@@ -151,6 +137,12 @@ Options:
 uv run pytest                      # All tests
 uv run pytest tests/test_core.py   # Core tests only
 uv run pytest -k integration       # Integration tests only
+```
+
+### Code Generation
+
+```bash
+just codegen  # Generate Pydantic models from schema
 ```
 
 ### Linting

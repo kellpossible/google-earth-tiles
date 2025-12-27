@@ -41,7 +41,7 @@ def load_config(config_path: str) -> dict:
 
 def validate_config(config: dict, layer_registry: dict | None = None) -> None:
     """
-    Validate configuration.
+    Validate configuration using Pydantic schema validation.
 
     Args:
         config: Configuration dictionary
@@ -49,123 +49,41 @@ def validate_config(config: dict, layer_registry: dict | None = None) -> None:
 
     Raises:
         ValueError: If configuration is invalid
+        ImportError: If Pydantic models haven't been generated (run `just codegen`)
     """
-    # Use provided registry or fall back to default LAYERS
+    try:
+        from pydantic import ValidationError
+
+        from src.models.generated import GoogleEarthTileGeneratorConfiguration
+    except ImportError as e:
+        raise ImportError(
+            "Pydantic models not found. Please run 'just codegen' to generate validation models from schema."
+        ) from e
+
+    # Pydantic structural validation
+    try:
+        GoogleEarthTileGeneratorConfiguration.model_validate(config)
+    except ValidationError as e:
+        # Convert Pydantic errors to ValueError for consistency
+        raise ValueError(f"Configuration validation failed:\n{e}") from e
+
+    # Build layer registry (includes default LAYERS + custom layer_sources)
     if layer_registry is None:
         layer_registry = LAYERS
 
-    required_keys = ["extent", "min_zoom", "max_zoom", "outputs", "layers"]
-
-    for key in required_keys:
-        if key not in config:
-            raise ValueError(f"Missing required config key: {key}")
-
-    # Validate extent
-    extent_keys = ["min_lon", "min_lat", "max_lon", "max_lat"]
-    for key in extent_keys:
-        if key not in config["extent"]:
-            raise ValueError(f"Missing extent key: {key}")
-
-    # Validate layers
-    if not isinstance(config["layers"], list) or len(config["layers"]) == 0:
-        raise ValueError("Layers must be a non-empty list")
-
+    # Validate layer names exist in registry (business logic Pydantic can't handle)
     for layer in config["layers"]:
         # Support both simple string format and dict format
         if isinstance(layer, str):
-            if layer not in layer_registry:
-                raise ValueError(
-                    f"Invalid layer: {layer}. Valid layers: {', '.join(layer_registry.keys())}"
-                )
+            layer_name = layer
         elif isinstance(layer, dict):
-            if "name" not in layer:
-                raise ValueError("Layer dict must have 'name' field")
-            if layer["name"] not in layer_registry:
-                raise ValueError(
-                    f"Invalid layer: {layer['name']}. Valid layers: {', '.join(layer_registry.keys())}"
-                )
-            # Validate optional fields
-            if "opacity" in layer and not (0 <= layer["opacity"] <= 100):
-                raise ValueError(f"Opacity must be between 0 and 100, got {layer['opacity']}")
-            if "blend_mode" in layer and layer["blend_mode"] not in ["normal", "multiply", "screen", "overlay"]:
-                raise ValueError(f"Invalid blend_mode: {layer['blend_mode']}")
-            if "export_mode" in layer and layer["export_mode"] not in ["composite", "separate"]:
-                raise ValueError(f"Invalid export_mode: {layer['export_mode']}. Must be 'composite' or 'separate'")
-
-            # Validate LOD configuration
-            if "lod_mode" in layer:
-                lod_mode = layer["lod_mode"]
-                if lod_mode not in ["all_zooms", "select_zooms"]:
-                    raise ValueError(
-                        f"Invalid lod_mode for layer {layer['name']}: '{lod_mode}'. "
-                        f"Must be 'all_zooms' or 'select_zooms'"
-                    )
-
-                if lod_mode == "select_zooms":
-                    if "selected_zooms" not in layer:
-                        raise ValueError(
-                            f"Layer {layer['name']} has lod_mode='select_zooms' but no selected_zooms provided"
-                        )
-
-                    selected_zooms = layer["selected_zooms"]
-                    if not isinstance(selected_zooms, list) or not selected_zooms:
-                        raise ValueError(f"Layer {layer['name']}: selected_zooms must be a non-empty list")
-
-                    for zoom in selected_zooms:
-                        if not isinstance(zoom, int):
-                            raise ValueError(
-                                f"Layer {layer['name']}: all selected_zooms must be integers, got {type(zoom).__name__}"
-                            )
-                        if zoom < 0 or zoom > 18:
-                            raise ValueError(f"Layer {layer['name']}: zoom levels must be between 0 and 18, got {zoom}")
+            layer_name = layer["name"]
         else:
-            raise ValueError("Layer must be a string or dict")
+            continue  # Pydantic already validated structure
 
-    # Validate zoom configuration
-    min_zoom = config["min_zoom"]
-    max_zoom = config["max_zoom"]
-
-    if not isinstance(min_zoom, int):
-        raise ValueError("min_zoom must be an integer")
-    if not isinstance(max_zoom, int):
-        raise ValueError("max_zoom must be an integer")
-
-    if min_zoom < 2 or min_zoom > 18:
-        raise ValueError(f"min_zoom must be between 2 and 18, got {min_zoom}")
-    if max_zoom < 2 or max_zoom > 18:
-        raise ValueError(f"max_zoom must be between 2 and 18, got {max_zoom}")
-
-    if min_zoom > max_zoom:
-        raise ValueError(f"min_zoom ({min_zoom}) cannot be greater than max_zoom ({max_zoom})")
-
-    # Validate metadata fields (all optional)
-    if "name" in config and config["name"] is not None and not isinstance(config["name"], str):
-        raise ValueError("name must be a string or null")
-
-    if "description" in config and config["description"] is not None and not isinstance(config["description"], str):
-        raise ValueError("description must be a string or null")
-
-    if "attribution" in config and config["attribution"] is not None and not isinstance(config["attribution"], str):
-        raise ValueError("attribution must be a string or null")
-
-    # Validate outputs
-    if not isinstance(config["outputs"], list) or len(config["outputs"]) == 0:
-        raise ValueError("outputs must be a non-empty list")
-
-    # Import here to avoid circular dependency
-    from src.outputs import OUTPUT_HANDLERS
-
-    valid_types = list(OUTPUT_HANDLERS.keys())
-
-    for output in config["outputs"]:
-        if not isinstance(output, dict):
-            raise ValueError("Each output must be a dictionary")
-        if "path" not in output:
-            raise ValueError("Each output must have a 'path' field")
-        if "type" in output and output["type"] not in valid_types:
-            raise ValueError(f"Invalid output type: {output['type']}. Valid types: {', '.join(valid_types)}")
-        if "web_compatible" in output and not isinstance(output["web_compatible"], bool):
-            raise ValueError("output web_compatible must be a boolean")
+        # Check layer exists in registry
+        if layer_name not in layer_registry:
+            raise ValueError(f"Invalid layer: {layer_name}. Valid layers: {', '.join(layer_registry.keys())}")
 
 
 def run_cli(config_path: str) -> int:

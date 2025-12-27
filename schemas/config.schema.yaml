@@ -1,0 +1,318 @@
+# yaml-language-server: $schema=http://json-schema.org/draft-07/schema
+
+$schema: "http://json-schema.org/draft-07/schema#"
+title: Google Earth Tile Generator Configuration
+description: Configuration schema for generating map tiles from WMTS sources for Google Earth, MBTiles, and GeoTIFF formats
+type: object
+required:
+  - extent
+  - min_zoom
+  - max_zoom
+  - outputs
+  - layers
+
+properties:
+  extent:
+    type: object
+    description: Geographic bounding box in WGS84 coordinates (longitude/latitude)
+    required:
+      - min_lon
+      - min_lat
+      - max_lon
+      - max_lat
+    properties:
+      min_lon:
+        type: number
+        minimum: -180
+        maximum: 180
+        description: Western boundary longitude in degrees
+      min_lat:
+        type: number
+        minimum: -90
+        maximum: 90
+        description: Southern boundary latitude in degrees
+      max_lon:
+        type: number
+        minimum: -180
+        maximum: 180
+        description: Eastern boundary longitude in degrees
+      max_lat:
+        type: number
+        minimum: -90
+        maximum: 90
+        description: Northern boundary latitude in degrees
+    additionalProperties: false
+
+  min_zoom:
+    type: integer
+    minimum: 2
+    maximum: 18
+    description: Minimum zoom level (2-18). Must be less than or equal to max_zoom.
+
+  max_zoom:
+    type: integer
+    minimum: 2
+    maximum: 18
+    description: Maximum zoom level (2-18). Must be greater than or equal to min_zoom.
+
+  name:
+    type:
+      - string
+      - "null"
+    description: Optional name/title for the output tileset. Used in metadata for MBTiles and GeoTIFF outputs.
+
+  description:
+    type:
+      - string
+      - "null"
+    description: Optional description for the output tileset. Used in metadata for MBTiles and GeoTIFF outputs.
+
+  attribution:
+    type:
+      - string
+      - "null"
+    description: Optional attribution text for the tileset. Overrides default layer attribution if provided.
+
+  outputs:
+    type: array
+    minItems: 1
+    description: Output configurations. At least one output is required. Each output specifies a file format and path.
+    items:
+      type: object
+      required:
+        - path
+      properties:
+        type:
+          type: string
+          enum:
+            - kmz
+            - mbtiles
+            - geotiff
+          default: kmz
+          description: Output format type
+        path:
+          type: string
+          minLength: 1
+          description: Output file path
+
+        # KMZ-specific options
+        web_compatible:
+          type: boolean
+          default: false
+          description: "KMZ only: Enable Google Earth Web compatibility (merges tiles, single zoom level)"
+        attribution_mode:
+          type: string
+          enum:
+            - description
+            - overlay
+          default: description
+          description: "KMZ only: How to display attribution - in description or as overlay"
+
+        # MBTiles-specific options
+        image_format:
+          type: string
+          enum:
+            - png
+            - jpg
+          default: png
+          description: "MBTiles only: Tile image format"
+        jpeg_quality:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 80
+          description: "MBTiles/GeoTIFF only: JPEG quality (1-100, only used with JPEG compression)"
+        export_mode:
+          type: string
+          enum:
+            - composite
+            - separate
+          default: composite
+          description: "MBTiles/GeoTIFF only: Export as single composite or separate files per layer"
+        metadata_name:
+          type: string
+          description: "MBTiles only: Name in MBTiles metadata (overrides global name)"
+        metadata_description:
+          type: string
+          description: "MBTiles only: Description in MBTiles metadata (overrides global description)"
+        metadata_type:
+          type: string
+          enum:
+            - baselayer
+            - overlay
+          default: overlay
+          description: "MBTiles only: Map type in metadata"
+
+        # GeoTIFF-specific options
+        compression:
+          type: string
+          enum:
+            - lzw
+            - deflate
+            - jpeg
+            - none
+          default: lzw
+          description: "GeoTIFF only: Compression method"
+        multi_zoom:
+          type: boolean
+          default: true
+          description: "GeoTIFF only: Include pyramids for all zoom levels (true) or single zoom (false)"
+        tiled:
+          type: boolean
+          default: true
+          description: "GeoTIFF only: Use tiled format for optimized random access"
+        tile_size:
+          type: integer
+          enum:
+            - 128
+            - 256
+            - 512
+          default: 256
+          description: "GeoTIFF only: Internal tile size in pixels (typically 256)"
+
+      additionalProperties: false
+
+  layers:
+    type: array
+    minItems: 1
+    description: Layer compositions. At least one layer is required. Supports simple string format or detailed object format.
+    items:
+      oneOf:
+        # Simple string format - just the layer name
+        - type: string
+          minLength: 1
+          description: Layer name (must exist in built-in LAYERS or custom layer_sources). Uses default settings (opacity 100, blend_mode normal, etc.)
+
+        # Complex object format - layer with customization
+        - type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              minLength: 1
+              description: Layer name (must exist in built-in LAYERS or custom layer_sources)
+            opacity:
+              type: integer
+              minimum: 0
+              maximum: 100
+              default: 100
+              description: Layer opacity (0=transparent, 100=opaque)
+            blend_mode:
+              type: string
+              enum:
+                - normal
+                - multiply
+                - screen
+                - overlay
+              default: normal
+              description: Blend mode for compositing this layer with others
+            export_mode:
+              type: string
+              enum:
+                - composite
+                - separate
+              default: composite
+              description: Whether to export as composite or separate layer
+            enabled:
+              type: boolean
+              default: true
+              description: Whether this layer is active
+            lod_mode:
+              type: string
+              enum:
+                - all_zooms
+                - select_zooms
+              default: all_zooms
+              description: Level of detail mode - use all zoom levels or select specific ones
+            selected_zooms:
+              type: array
+              items:
+                type: integer
+                minimum: 0
+                maximum: 18
+              minItems: 1
+              description: Selected zoom levels (required when lod_mode=select_zooms). Each value must be 0-18.
+          additionalProperties: false
+
+  layer_sources:
+    type: object
+    description: Custom layer source definitions for WMTS/XYZ tile servers. Allows adding custom tile sources beyond the built-in Japan GSI layers.
+    patternProperties:
+      "^[a-zA-Z0-9_-]+$":
+        type: object
+        required:
+          - url_template
+          - extension
+          - min_zoom
+          - max_zoom
+          - attribution
+        properties:
+          url_template:
+            type: string
+            description: URL template with {z}, {x}, {y} placeholders for zoom, x, and y tile coordinates (any order)
+          extension:
+            type: string
+            enum:
+              - png
+              - jpg
+            description: Tile image format
+          min_zoom:
+            type: integer
+            minimum: 0
+            maximum: 18
+            description: Minimum zoom level available from this tile source
+          max_zoom:
+            type: integer
+            minimum: 0
+            maximum: 18
+            description: Maximum zoom level available from this tile source
+          attribution:
+            type: string
+            minLength: 1
+            description: Attribution text (required for all custom sources)
+          display_name:
+            type: string
+            description: Human-readable display name
+          description:
+            type: string
+            description: Short description of the layer
+          japanese_name:
+            type: string
+            description: Japanese name/title
+          full_description:
+            type: string
+            description: Full/detailed description
+          info_url:
+            type: string
+            format: uri
+            description: URL with more information about the layer
+          category:
+            type: string
+            enum:
+              - basemap
+              - photo
+              - elevation
+              - landuse
+              - reference
+              - disaster_eq
+              - disaster_weather
+              - disaster_volcano
+              - other
+            default: other
+            description: Layer category for organization
+        additionalProperties: false
+    additionalProperties: false
+
+  # CLI-only options (not used in GUI)
+  include_timestamp:
+    type: boolean
+    default: true
+    description: "CLI only: Include timestamp in generated output"
+
+  enable_cache:
+    type: boolean
+    default: true
+    description: "CLI only: Enable tile caching during generation"
+
+additionalProperties: false
