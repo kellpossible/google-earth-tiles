@@ -202,9 +202,7 @@ class LayerComposition:
             enabled = data.get("enabled", True)
 
         if layer_name not in layer_registry:
-            raise ValueError(
-                f"Unknown layer: {layer_name}. Valid layers: {', '.join(layer_registry.keys())}"
-            )
+            raise ValueError(f"Unknown layer: {layer_name}. Valid layers: {', '.join(layer_registry.keys())}")
 
         return cls(
             layer_config=layer_registry[layer_name],

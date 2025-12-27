@@ -34,9 +34,7 @@ class OutputConfig:
 
         if self.output_type not in OUTPUT_HANDLERS:
             valid_types = list(OUTPUT_HANDLERS.keys())
-            raise ValueError(
-                f"Invalid output_type: {self.output_type}. Valid types: {valid_types}"
-            )
+            raise ValueError(f"Invalid output_type: {self.output_type}. Valid types: {valid_types}")
 
         # Validate format-specific options
         from src.outputs import get_output_handler
@@ -68,11 +66,12 @@ class OutputConfig:
         return result
 
     @classmethod
-    def from_dict(cls, data: dict) -> "OutputConfig":
+    def from_dict(cls, data: dict, config_dir: Path | None = None) -> "OutputConfig":
         """Create OutputConfig from dictionary.
 
         Args:
             data: Dictionary containing output configuration
+            config_dir: Directory containing config file (for resolving relative paths)
 
         Returns:
             OutputConfig instance
@@ -85,6 +84,13 @@ class OutputConfig:
 
         output_type = data.get("type", "kmz")
 
+        # Parse output path
+        output_path = Path(data["path"])
+
+        # Resolve relative paths relative to config file directory
+        if config_dir and not output_path.is_absolute():
+            output_path = config_dir / output_path
+
         # Extract format-specific options
         # Exclude standard keys: type, path
         standard_keys = {"type", "path"}
@@ -92,6 +98,6 @@ class OutputConfig:
 
         return cls(
             output_type=output_type,
-            output_path=Path(data["path"]),
+            output_path=output_path,
             options=options,
         )

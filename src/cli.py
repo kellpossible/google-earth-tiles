@@ -7,15 +7,16 @@ import yaml
 
 from src.core.config import LAYERS, build_layer_registry
 from src.core.tile_calculator import TileCalculator
-from src.models.extent import Extent
+from src.models.extent_config import ExtentConfig
 from src.models.layer_composition import LayerComposition
 from src.models.output_config import OutputConfig
 from src.outputs import get_output_handler
+from src.utils.kml_extent import calculate_extent_from_kml
 
 logger = logging.getLogger(__name__)
 
 
-def load_config(config_path: str) -> dict:
+def load_config(config_path: str) -> tuple[dict, Path]:
     """
     Load YAML configuration file.
 
@@ -23,7 +24,7 @@ def load_config(config_path: str) -> dict:
         config_path: Path to YAML config file
 
     Returns:
-        Configuration dictionary
+        Tuple of (configuration dictionary, config directory path)
 
     Raises:
         FileNotFoundError: If config file doesn't exist
@@ -36,7 +37,10 @@ def load_config(config_path: str) -> dict:
     with open(config_file) as f:
         config = yaml.safe_load(f)
 
-    return config
+    # Return config and its directory for relative path resolution
+    config_dir = config_file.parent.resolve()
+
+    return config, config_dir
 
 
 def validate_config(config: dict, layer_registry: dict | None = None) -> None:
@@ -99,20 +103,34 @@ def run_cli(config_path: str) -> int:
     try:
         # Load and validate config
         logger.info(f"Loading configuration from: {config_path}")
-        config = load_config(config_path)
+        config, config_dir = load_config(config_path)
 
         # Build layer registry (includes default LAYERS + custom layer_sources)
         layer_registry = build_layer_registry(config)
 
         validate_config(config, layer_registry)
 
-        # Parse configuration
-        extent = Extent(
-            min_lon=config["extent"]["min_lon"],
-            min_lat=config["extent"]["min_lat"],
-            max_lon=config["extent"]["max_lon"],
-            max_lat=config["extent"]["max_lat"],
-        )
+        # Parse extent configuration
+        extent_data = config["extent"]
+
+        extent_config = ExtentConfig.from_dict(extent_data, config_dir=config_dir)
+
+        # Resolve file-based extent if needed
+        if extent_config.mode == "file":
+            try:
+                resolved_extent = calculate_extent_from_kml(extent_config.file_path, extent_config.padding_meters)
+                extent_config._resolved_extent = resolved_extent
+                logger.info(f"Loaded extent from KML: {extent_config.file_path}")
+                if extent_config.padding_meters > 0:
+                    logger.info(f"Applied padding: {extent_config.padding_meters} meters")
+            except FileNotFoundError as e:
+                logger.error(str(e))
+                return 1
+            except ValueError as e:
+                logger.error(f"Invalid KML file: {e}")
+                return 1
+
+        extent = extent_config.get_extent()
 
         if not extent.is_valid():
             logger.error("Invalid extent: coordinates out of range or min > max")
@@ -130,7 +148,7 @@ def run_cli(config_path: str) -> int:
         outputs = []
         for output_dict in config["outputs"]:
             try:
-                outputs.append(OutputConfig.from_dict(output_dict))
+                outputs.append(OutputConfig.from_dict(output_dict, config_dir=config_dir))
             except Exception as e:
                 logger.error(f"Invalid output configuration: {e}")
                 return 1
@@ -203,7 +221,9 @@ def run_cli(config_path: str) -> int:
             # Get the output handler for this type
             handler = get_output_handler(output_config.output_type)
 
-            logger.info(f"Generating output {idx}/{len(outputs)} ({handler.get_display_name()}): {output_config.output_path}")
+            logger.info(
+                f"Generating output {idx}/{len(outputs)} ({handler.get_display_name()}): {output_config.output_path}"
+            )
 
             # Log format-specific options
             if output_config.web_compatible:
@@ -221,7 +241,7 @@ def run_cli(config_path: str) -> int:
                 description=description,
                 attribution=attribution,
                 include_timestamp=include_timestamp,
-                **output_config.options
+                **output_config.options,
             )
             logger.info(f"✓ Created: {result_path}")
 

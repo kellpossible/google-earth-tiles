@@ -98,7 +98,7 @@ class ExportWorker(QThread):
                     name=self.request.name,
                     description=self.request.description,
                     attribution=self.request.attribution,
-                    **output_config.options
+                    **output_config.options,
                 )
                 result_paths.append(result_path)
 

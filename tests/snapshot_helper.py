@@ -149,7 +149,9 @@ def extract_mbtiles_data(mbtiles_path: Path) -> dict:
     metadata = {row[0]: row[1] for row in cursor.fetchall()}
 
     # Extract tiles (hash the blob data for comparison)
-    cursor.execute("SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles ORDER BY zoom_level, tile_column, tile_row")
+    cursor.execute(
+        "SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles ORDER BY zoom_level, tile_column, tile_row"
+    )
     tiles = {}
     zoom_levels = set()
 
@@ -279,8 +281,8 @@ def extract_geotiff_data(geotiff_path: Path) -> dict:
     geotransform = tuple(round(x, 6) for x in dataset.GetGeoTransform())
 
     # Extract compression from IMAGE_STRUCTURE metadata
-    image_metadata = dataset.GetMetadata('IMAGE_STRUCTURE')
-    compression = image_metadata.get('COMPRESSION', 'None')
+    image_metadata = dataset.GetMetadata("IMAGE_STRUCTURE")
+    compression = image_metadata.get("COMPRESSION", "None")
 
     # Extract overview count from first band
     band = dataset.GetRasterBand(1)
@@ -359,11 +361,15 @@ def compare_geotiff(geotiff1: Path, geotiff2: Path) -> list[str]:
 
     # Compare overview count
     if data1["overview_count"] != data2["overview_count"]:
-        differences.append(f"DIFF overview count: snapshot={data1['overview_count']}, current={data2['overview_count']}")
+        differences.append(
+            f"DIFF overview count: snapshot={data1['overview_count']}, current={data2['overview_count']}"
+        )
 
     # Compare raster data hash
     if data1["raster_hash"] != data2["raster_hash"]:
-        differences.append(f"DIFF raster data: snapshot_hash={data1['raster_hash']}, current_hash={data2['raster_hash']}")
+        differences.append(
+            f"DIFF raster data: snapshot_hash={data1['raster_hash']}, current_hash={data2['raster_hash']}"
+        )
 
     # Compare metadata
     metadata1 = data1["metadata"]

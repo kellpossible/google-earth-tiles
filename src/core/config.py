@@ -1006,6 +1006,7 @@ LAYERS: dict[str, LayerConfig] = {
 
 # Helper functions for custom layer sources
 
+
 def validate_layer_source_definition(layer_name: str, layer_def: dict) -> None:
     """Validate a custom layer source definition.
 
@@ -1028,9 +1029,7 @@ def validate_layer_source_definition(layer_name: str, layer_def: dict) -> None:
     required_fields = ["url_template", "extension", "min_zoom", "max_zoom"]
     missing_fields = [field for field in required_fields if field not in layer_def]
     if missing_fields:
-        raise ValueError(
-            f"Custom layer '{layer_name}' is missing required fields: {', '.join(missing_fields)}"
-        )
+        raise ValueError(f"Custom layer '{layer_name}' is missing required fields: {', '.join(missing_fields)}")
 
     # Validate url_template
     url_template = layer_def["url_template"]
@@ -1048,9 +1047,7 @@ def validate_layer_source_definition(layer_name: str, layer_def: dict) -> None:
     # Validate extension
     extension = layer_def["extension"]
     if extension not in ["png", "jpg"]:
-        raise ValueError(
-            f"Custom layer '{layer_name}': extension must be 'png' or 'jpg', got '{extension}'"
-        )
+        raise ValueError(f"Custom layer '{layer_name}': extension must be 'png' or 'jpg', got '{extension}'")
 
     # Validate zoom range
     min_zoom = layer_def["min_zoom"]
@@ -1066,9 +1063,7 @@ def validate_layer_source_definition(layer_name: str, layer_def: dict) -> None:
         )
 
     if min_zoom > max_zoom:
-        raise ValueError(
-            f"Custom layer '{layer_name}': min_zoom ({min_zoom}) must be <= max_zoom ({max_zoom})"
-        )
+        raise ValueError(f"Custom layer '{layer_name}': min_zoom ({min_zoom}) must be <= max_zoom ({max_zoom})")
 
     # Validate optional category field
     if "category" in layer_def:
@@ -1076,8 +1071,7 @@ def validate_layer_source_definition(layer_name: str, layer_def: dict) -> None:
         if category not in CATEGORIES:
             valid_categories = ", ".join(CATEGORIES.keys())
             raise ValueError(
-                f"Custom layer '{layer_name}': invalid category '{category}'. "
-                f"Valid categories: {valid_categories}"
+                f"Custom layer '{layer_name}': invalid category '{category}'. Valid categories: {valid_categories}"
             )
 
 

@@ -131,11 +131,13 @@ class GeoTIFFGenerator(BaseTileGenerator):
         options = []
 
         if tiled:
-            options.extend([
-                "TILED=YES",
-                f"BLOCKXSIZE={tile_size}",
-                f"BLOCKYSIZE={tile_size}",
-            ])
+            options.extend(
+                [
+                    "TILED=YES",
+                    f"BLOCKXSIZE={tile_size}",
+                    f"BLOCKYSIZE={tile_size}",
+                ]
+            )
 
         # Add compression
         if compression != "none":

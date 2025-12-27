@@ -19,6 +19,7 @@ def test_geotiff_basic_single_layer_lzw(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -105,6 +106,7 @@ def test_geotiff_deflate_compression(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -138,7 +140,9 @@ def test_geotiff_deflate_compression(snapshot):
         assert ds is not None
 
         metadata = ds.GetMetadata("IMAGE_STRUCTURE")
-        assert metadata.get("COMPRESSION") == "DEFLATE", f"Expected DEFLATE compression, got {metadata.get('COMPRESSION')}"
+        assert metadata.get("COMPRESSION") == "DEFLATE", (
+            f"Expected DEFLATE compression, got {metadata.get('COMPRESSION')}"
+        )
         assert ds.RasterCount == 4, f"Expected 4 bands, got {ds.RasterCount}"
 
         # Verify basic properties
@@ -157,6 +161,7 @@ def test_geotiff_jpeg_compression(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -214,6 +219,7 @@ def test_geotiff_no_compression(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -270,6 +276,7 @@ def test_geotiff_separate_export_mode(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -333,6 +340,7 @@ def test_geotiff_multi_zoom_with_pyramids(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -396,6 +404,7 @@ def test_geotiff_multi_zoom_no_pyramids(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -449,6 +458,7 @@ def test_geotiff_multiple_layers_blending(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,

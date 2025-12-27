@@ -58,7 +58,7 @@ class OutputHandler(Protocol):
         max_zoom: int,
         layer_compositions: list[LayerComposition],
         progress_callback=None,
-        **options
+        **options,
     ) -> Path:
         """Generate the output file.
 
@@ -80,12 +80,7 @@ class OutputHandler(Protocol):
         ...
 
     def estimate_tiles(
-        self,
-        extent: Extent,
-        min_zoom: int,
-        max_zoom: int,
-        layer_compositions: list[LayerComposition],
-        **options
+        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], **options
     ) -> dict:
         """Estimate tile count and size for this output.
 

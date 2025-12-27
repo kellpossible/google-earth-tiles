@@ -15,6 +15,7 @@ def test_mbtiles_basic_single_layer_png(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -57,6 +58,7 @@ def test_mbtiles_jpeg_format(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -96,6 +98,7 @@ def test_mbtiles_separate_export_mode(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -143,6 +146,7 @@ def test_mbtiles_multi_zoom(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -181,6 +185,7 @@ def test_mbtiles_multiple_layers_blending(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -223,6 +228,7 @@ def test_mbtiles_baselayer_type(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,

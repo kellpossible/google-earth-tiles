@@ -127,7 +127,9 @@ def main():
 
     # Schema subcommand
     schema_parser = subparsers.add_parser("schema", help="Print configuration schema documentation")
-    schema_parser.add_argument("--yaml", action="store_true", help="Output raw YAML schema instead of formatted documentation")
+    schema_parser.add_argument(
+        "--yaml", action="store_true", help="Output raw YAML schema instead of formatted documentation"
+    )
     schema_parser.set_defaults(func=cmd_schema)
 
     args = parser.parse_args()

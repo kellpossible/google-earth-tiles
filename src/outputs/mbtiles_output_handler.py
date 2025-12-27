@@ -114,11 +114,29 @@ class MBTilesOutputHandler:
 
         if export_mode == "composite":
             return self._generate_composite(
-                output_path, extent, min_zoom, max_zoom, layer_compositions, progress_callback, name, description, attribution, **options
+                output_path,
+                extent,
+                min_zoom,
+                max_zoom,
+                layer_compositions,
+                progress_callback,
+                name,
+                description,
+                attribution,
+                **options,
             )
         else:
             return self._generate_separate(
-                output_path, extent, min_zoom, max_zoom, layer_compositions, progress_callback, name, description, attribution, **options
+                output_path,
+                extent,
+                min_zoom,
+                max_zoom,
+                layer_compositions,
+                progress_callback,
+                name,
+                description,
+                attribution,
+                **options,
             )
 
     @staticmethod
@@ -261,8 +279,9 @@ class MBTilesOutputHandler:
                 def layer_progress(current, total, message):
                     if progress_callback:
                         progress_callback(
-                            current, total, f"Layer {layer_idx+1}/{len(enabled_layers)} ({layer_name}): {message}"
+                            current, total, f"Layer {layer_idx + 1}/{len(enabled_layers)} ({layer_name}): {message}"
                         )
+
                 return layer_progress
 
             generator = MBTilesGenerator(layer_output, make_layer_progress(idx, layer_id))

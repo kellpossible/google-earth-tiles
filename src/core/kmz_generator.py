@@ -156,6 +156,7 @@ class KMZGenerator(BaseTileGenerator):
             attr_text = attribution
         else:
             from src.utils.attribution import build_attribution_from_layers
+
             attr_text = build_attribution_from_layers(layer_compositions)
 
         # Only add overlay if we have attribution text
@@ -168,7 +169,9 @@ class KMZGenerator(BaseTileGenerator):
         screen.description = attr_text
 
         # Position in bottom-left corner
-        screen.overlayxy = simplekml.OverlayXY(x=0, y=0, xunits=simplekml.Units.fraction, yunits=simplekml.Units.fraction)
+        screen.overlayxy = simplekml.OverlayXY(
+            x=0, y=0, xunits=simplekml.Units.fraction, yunits=simplekml.Units.fraction
+        )
         screen.screenxy = simplekml.ScreenXY(x=10, y=10, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)
         screen.size = simplekml.Size(x=0, y=0, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)
 
@@ -228,8 +231,7 @@ class KMZGenerator(BaseTileGenerator):
             )
 
             logger.info(
-                f"Web compatible mode: Calculated max zoom {calculated_max_zoom} "
-                f"for {effective_layer_count} layer(s)"
+                f"Web compatible mode: Calculated max zoom {calculated_max_zoom} for {effective_layer_count} layer(s)"
             )
 
             # Determine actual zoom to use
@@ -250,7 +252,16 @@ class KMZGenerator(BaseTileGenerator):
 
             logger.info(f"Web compatible mode: Using zoom {actual_zoom} (range: {min_zoom}-{max_zoom})")
 
-            return await self._create_kmz_web_compatible(extent, actual_zoom, layer_compositions, include_timestamp, name, description, attribution, attribution_mode)
+            return await self._create_kmz_web_compatible(
+                extent,
+                actual_zoom,
+                layer_compositions,
+                include_timestamp,
+                name,
+                description,
+                attribution,
+                attribution_mode,
+            )
 
         # Separate layers by export mode (handles single-layer special case)
         composited_layers, separate_layers = self.separate_layers_by_export_mode(layer_compositions)
@@ -279,6 +290,7 @@ class KMZGenerator(BaseTileGenerator):
                 description_parts.append(attribution)
             else:
                 from src.utils.attribution import build_attribution_from_layers
+
                 auto_attr = build_attribution_from_layers(layer_compositions)
                 if auto_attr:
                     description_parts.append(auto_attr)
@@ -453,7 +465,18 @@ class KMZGenerator(BaseTileGenerator):
         """
         # Run async version (Python 3.14 compatible)
         return asyncio.run(
-            self.create_kmz_async(extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, name, description, attribution, attribution_mode)
+            self.create_kmz_async(
+                extent,
+                min_zoom,
+                max_zoom,
+                layer_compositions,
+                web_compatible,
+                include_timestamp,
+                name,
+                description,
+                attribution,
+                attribution_mode,
+            )
         )
 
     def _add_composited_tiles(
@@ -707,7 +730,15 @@ class KMZGenerator(BaseTileGenerator):
         return canvas
 
     async def _create_kmz_web_compatible(
-        self, extent: Extent, zoom: int, layer_compositions: list[LayerComposition], include_timestamp: bool = True, name: str | None = None, description: str | None = None, attribution: str | None = None, attribution_mode: str = "description"
+        self,
+        extent: Extent,
+        zoom: int,
+        layer_compositions: list[LayerComposition],
+        include_timestamp: bool = True,
+        name: str | None = None,
+        description: str | None = None,
+        attribution: str | None = None,
+        attribution_mode: str = "description",
     ) -> Path:
         """
         Create web-compatible KMZ with merged chunks.
@@ -742,6 +773,7 @@ class KMZGenerator(BaseTileGenerator):
                 description_parts.append(attribution)
             else:
                 from src.utils.attribution import build_attribution_from_layers
+
                 auto_attr = build_attribution_from_layers(layer_compositions)
                 if auto_attr:
                     description_parts.append(auto_attr)

@@ -97,7 +97,9 @@ class FileOperations:
         try:
             with open(file_path, "w") as f:
                 # Add YAML language server schema comment for IDE support
-                schema_url = "https://raw.githubusercontent.com/kellpossible/google-earth-tiles/main/schemas/config.schema.yaml"
+                schema_url = (
+                    "https://raw.githubusercontent.com/kellpossible/google-earth-tiles/main/schemas/config.schema.yaml"
+                )
                 f.write(f"# yaml-language-server: $schema={schema_url}\n\n")
 
                 yaml.dump(state, f, default_flow_style=False, sort_keys=False)
@@ -157,7 +159,7 @@ class FileOperations:
             from src.cli import load_config
 
             # Load config (validation happens in load_state_callback which has access to layer_sources)
-            config = load_config(str(file_path))
+            config, _config_dir = load_config(str(file_path))
 
             # Load into UI (this will build layer registry and validate)
             load_state_callback(config)

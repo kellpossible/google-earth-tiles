@@ -16,6 +16,7 @@ def test_basic_single_layer_composite(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -47,6 +48,7 @@ def test_multi_zoom_lod(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -76,6 +78,7 @@ def test_separate_export_mode(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -116,6 +119,7 @@ def test_lod_select_zooms(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -151,6 +155,7 @@ def test_web_compatible_mode(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -180,6 +185,7 @@ def test_web_compatible_with_separate_layer(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -212,6 +218,7 @@ def test_multiple_layers_blending(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -245,6 +252,7 @@ def test_layer_enabled_disabled(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -277,6 +285,7 @@ def test_blend_modes(snapshot):
 
         config = {
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -336,6 +345,7 @@ def test_custom_layer_sources(snapshot, tile_server):
                 }
             },
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -428,6 +438,7 @@ def test_resampling_validation(tile_server):
                 }
             },
             "extent": {
+                "type": "latlon",
                 "min_lon": 139.69,
                 "min_lat": 35.67,
                 "max_lon": 139.71,
@@ -512,15 +523,21 @@ def test_resampling_validation(tile_server):
 
         # Zoom 12: RED (resampled from zoom 11)
         assert 12 in zoom_colors, "No tiles at zoom 12"
-        assert zoom_colors[12] == (255, 0, 0), f"Zoom 12 should be RGB(255, 0, 0) (resampled from 11), got RGB{zoom_colors[12]}"
+        assert zoom_colors[12] == (255, 0, 0), (
+            f"Zoom 12 should be RGB(255, 0, 0) (resampled from 11), got RGB{zoom_colors[12]}"
+        )
 
         # Zoom 13: BLUE (resampled from zoom 15)
         assert 13 in zoom_colors, "No tiles at zoom 13"
-        assert zoom_colors[13] == (0, 0, 255), f"Zoom 13 should be RGB(0, 0, 255) (resampled from 15), got RGB{zoom_colors[13]}"
+        assert zoom_colors[13] == (0, 0, 255), (
+            f"Zoom 13 should be RGB(0, 0, 255) (resampled from 15), got RGB{zoom_colors[13]}"
+        )
 
         # Zoom 14: BLUE (resampled from zoom 15)
         assert 14 in zoom_colors, "No tiles at zoom 14"
-        assert zoom_colors[14] == (0, 0, 255), f"Zoom 14 should be RGB(0, 0, 255) (resampled from 15), got RGB{zoom_colors[14]}"
+        assert zoom_colors[14] == (0, 0, 255), (
+            f"Zoom 14 should be RGB(0, 0, 255) (resampled from 15), got RGB{zoom_colors[14]}"
+        )
 
         # Zoom 15: BLUE (native)
         assert 15 in zoom_colors, "No tiles at zoom 15"

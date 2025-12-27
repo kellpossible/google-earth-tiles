@@ -28,9 +28,11 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.config import CATEGORIES, DEFAULT_ZOOM, LAYERS, LayerConfig
+from src.gui.extent_widget import ExtentWidget
 from src.gui.output_item_widget import OutputItemWidget
 from src.gui.zoom_range_widget import ZoomRangeWidget
 from src.models.extent import Extent
+from src.models.extent_config import ExtentConfig
 from src.models.generation_request import GenerationRequest
 from src.models.layer_composition import LayerComposition
 from src.models.output_config import OutputConfig
@@ -704,8 +706,14 @@ class SettingsPanel(QWidget):
         zoom_group.setLayout(zoom_layout)
         layout.addWidget(zoom_group)
 
-        # Extent display
-        extent_group = QGroupBox("Selected Extent")
+        # Extent configuration widget
+        self.extent_widget = ExtentWidget()
+        self.extent_widget.extent_changed.connect(self._on_extent_widget_changed)
+        self.extent_widget.extent_cleared.connect(self.clear_extent)
+        layout.addWidget(self.extent_widget)
+
+        # Map extent display (shown only in map mode)
+        self.map_extent_group = QGroupBox("Selected Extent (Map)")
         extent_layout = QFormLayout()
 
         self.north_edit = QLineEdit()
@@ -722,8 +730,11 @@ class SettingsPanel(QWidget):
         extent_layout.addRow("East:", self.east_edit)
         extent_layout.addRow("West:", self.west_edit)
 
-        extent_group.setLayout(extent_layout)
-        layout.addWidget(extent_group)
+        self.map_extent_group.setLayout(extent_layout)
+        layout.addWidget(self.map_extent_group)
+
+        # Initially update visibility based on mode
+        self._update_extent_display_visibility()
 
         # Output section (supports multiple outputs)
         output_group = QGroupBox("Output")
@@ -773,11 +784,7 @@ class SettingsPanel(QWidget):
         self._update_zoom_range()
 
         # Start with one empty output pre-added
-        default_output = OutputConfig(
-            output_type="kmz",
-            output_path=Path(""),
-            options={"web_compatible": False}
-        )
+        default_output = OutputConfig(output_type="kmz", output_path=Path(""), options={"web_compatible": False})
         self._add_output_widget(default_output)
 
     def _on_layer_changed(self):
@@ -806,20 +813,17 @@ class SettingsPanel(QWidget):
         """Update attribution placeholder with auto-calculated value from layers."""
         layer_compositions = self.get_layer_compositions()
         if not layer_compositions:
-            self.attribution_edit.setPlaceholderText(
-                "Leave empty for auto-generated attribution from layer sources..."
-            )
+            self.attribution_edit.setPlaceholderText("Leave empty for auto-generated attribution from layer sources...")
             return
 
         from src.utils.attribution import build_attribution_from_layers
+
         auto_attribution = build_attribution_from_layers(layer_compositions)
 
         if auto_attribution:
             self.attribution_edit.setPlaceholderText(f"Leave empty to use: {auto_attribution}")
         else:
-            self.attribution_edit.setPlaceholderText(
-                "Leave empty for auto-generated attribution from layer sources..."
-            )
+            self.attribution_edit.setPlaceholderText("Leave empty for auto-generated attribution from layer sources...")
 
     def _move_layer_up(self, widget: LayerItemWidget):
         """Move layer up in the composition order."""
@@ -1036,11 +1040,7 @@ class SettingsPanel(QWidget):
 
     def _on_add_output_clicked(self):
         """Add new output widget."""
-        default_output = OutputConfig(
-            output_type="kmz",
-            output_path=Path(""),
-            options={"web_compatible": False}
-        )
+        default_output = OutputConfig(output_type="kmz", output_path=Path(""), options={"web_compatible": False})
         self._add_output_widget(default_output)
         self._emit_state_changed()
 
@@ -1142,6 +1142,20 @@ class SettingsPanel(QWidget):
         self._update_estimates()
         self._update_generate_button()
 
+    def _on_extent_widget_changed(self, extent: Extent):
+        """Handle extent change from extent widget (file mode)."""
+        self.update_extent(extent)
+
+        # Update map to show the extent rectangle
+        self.extent_loaded.emit(extent)
+
+    def _update_extent_display_visibility(self):
+        """Update which extent display is visible based on mode."""
+        mode = self.extent_widget.get_mode()
+
+        # Show map extent display only in map mode
+        self.map_extent_group.setVisible(mode == "map")
+
     def _update_estimates(self):
         """Update tile count and size estimates for all outputs."""
         # Estimates are now per-output, update all output widgets
@@ -1235,10 +1249,51 @@ class SettingsPanel(QWidget):
         min_zoom, max_zoom = self.zoom_range_widget.value()
 
         # Collect outputs from all output widgets
-        outputs = [widget.get_config().to_dict() for widget in self.output_widgets]
+        # Convert absolute paths to relative if they're under the config directory
+        config_dir = Path(self.file_operations.current_file).parent if self.file_operations.current_file else None
+
+        outputs = []
+        for widget in self.output_widgets:
+            output_dict = widget.get_config().to_dict()
+
+            # Make output path relative to config directory if possible
+            if config_dir:
+                output_path = Path(output_dict["path"])
+                if output_path.is_absolute():
+                    try:
+                        relative_path = output_path.relative_to(config_dir)
+                        output_dict["path"] = str(relative_path)
+                    except ValueError:
+                        # Path is not under config_dir, keep absolute
+                        pass
+
+            outputs.append(output_dict)
+
+        # Get extent configuration
+        extent_mode = self.extent_widget.get_mode()
+
+        if extent_mode == "file":
+            extent_config = self.extent_widget.get_extent_config()
+            if extent_config is None:
+                raise ValueError("File mode selected but no valid KML file")
+            extent_dict = extent_config.to_dict()
+
+            # Make extent file path relative to config directory if possible
+            if config_dir and "file" in extent_dict:
+                file_path = Path(extent_dict["file"])
+                if file_path.is_absolute():
+                    try:
+                        relative_path = file_path.relative_to(config_dir)
+                        extent_dict["file"] = str(relative_path)
+                    except ValueError:
+                        # Path is not under config_dir, keep absolute
+                        pass
+        else:
+            # Map mode - save as latlon with explicit type
+            extent_dict = {"type": "latlon", **self.current_extent.to_dict()}
 
         state = {
-            "extent": self.current_extent.to_dict(),
+            "extent": extent_dict,
             "min_zoom": min_zoom,
             "max_zoom": max_zoom,
             "name": self.current_name if self.current_name else None,
@@ -1292,9 +1347,7 @@ class SettingsPanel(QWidget):
         # Store custom layers for use in Add Layer dialog
         from src.core.config import LAYERS
 
-        self.custom_layer_registry = {
-            name: config for name, config in layer_registry.items() if name not in LAYERS
-        }
+        self.custom_layer_registry = {name: config for name, config in layer_registry.items() if name not in LAYERS}
 
         validate_config(state, layer_registry)
 
@@ -1322,13 +1375,35 @@ class SettingsPanel(QWidget):
             self.output_widgets.clear()
 
             # 5. Load outputs
+            config_dir = (
+                Path(self.file_operations.current_file).parent if self.file_operations.current_file else Path.cwd()
+            )
             for output_dict in state["outputs"]:
-                output_config = OutputConfig.from_dict(output_dict)
+                output_config = OutputConfig.from_dict(output_dict, config_dir=config_dir)
                 self._add_output_widget(output_config)
 
             # 6. Set extent
-            extent = Extent.from_dict(state["extent"])
+            extent_data = state["extent"]
+            extent_mode = extent_data.get("type", "latlon")
+
+            if extent_mode == "file":
+                # Load file-based extent
+                config_dir = (
+                    Path(self.file_operations.current_file).parent if self.file_operations.current_file else Path.cwd()
+                )
+                extent_config = ExtentConfig.from_dict(extent_data, config_dir=config_dir)
+
+                self.extent_widget.set_extent_config(extent_config)
+
+                # ExtentWidget will calculate and emit extent
+                extent = extent_config.get_extent()
+            else:
+                # Map mode - load coordinates
+                extent = Extent.from_dict(extent_data)
+
             self.current_extent = extent
+
+            # Update displays
             self.north_edit.setText(f"{extent.max_lat:.6f}")
             self.south_edit.setText(f"{extent.min_lat:.6f}")
             self.east_edit.setText(f"{extent.max_lon:.6f}")

@@ -29,8 +29,7 @@ def get_output_handler(output_type: str) -> OutputHandler:
     """
     if output_type not in OUTPUT_HANDLERS:
         raise ValueError(
-            f"Unsupported output type: {output_type}. "
-            f"Supported types: {', '.join(OUTPUT_HANDLERS.keys())}"
+            f"Unsupported output type: {output_type}. Supported types: {', '.join(OUTPUT_HANDLERS.keys())}"
         )
 
     handler_class = OUTPUT_HANDLERS[output_type]
@@ -44,8 +43,7 @@ def get_available_output_types() -> list[tuple[str, str]]:
         List of (type_name, display_name) tuples
     """
     return [
-        (handler_class.get_type_name(), handler_class.get_display_name())
-        for handler_class in OUTPUT_HANDLERS.values()
+        (handler_class.get_type_name(), handler_class.get_display_name()) for handler_class in OUTPUT_HANDLERS.values()
     ]
 
 

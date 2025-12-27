@@ -2,10 +2,10 @@
 
 extent:
   type: latlon
-  min_lon: 142.78347015380862
-  min_lat: 43.63955371305865
-  max_lon: 142.88269042968753
-  max_lat: 43.682522120039025
+  min_lon: 142.2844505310059
+  min_lat: 43.29544927226818
+  max_lon: 142.3759460449219
+  max_lat: 43.38683644645541
 min_zoom: 12
 max_zoom: 16
 name: null
@@ -13,23 +13,27 @@ description: null
 attribution: null
 outputs:
 - type: mbtiles
-  path: asahidake.mbtiles
+  path: furano.mbtiles
   image_format: png
   jpeg_quality: 80
   export_mode: composite
   metadata_type: baselayer
 - type: kmz
-  path: asahidake.kmz
+  path: furano_desktop.kmz
   web_compatible: false
   attribution_mode: description
 - type: geotiff
-  path: asahidake.tiff
+  path: furano.tiff
   compression: lzw
   jpeg_quality: 80
   export_mode: composite
   multi_zoom: false
   tiled: true
   tile_size: 256
+- type: kmz
+  path: furano_web.kmz
+  web_compatible: true
+  attribution_mode: description
 layers:
 - name: std
   opacity: 100
@@ -44,4 +48,3 @@ layers:
 - name: slopezone1map
   opacity: 52
   blend_mode: normal
-  export_mode: separate

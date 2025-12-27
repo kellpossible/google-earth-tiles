@@ -45,7 +45,7 @@ class KMZOutputHandler:
         name: str | None = None,
         description: str | None = None,
         attribution: str | None = None,
-        **options
+        **options,
     ) -> Path:
         """Generate a KMZ file.
 
@@ -73,16 +73,20 @@ class KMZOutputHandler:
 
         generator = KMZGenerator(output_path, progress_callback)
         return generator.create_kmz(
-            extent, min_zoom, max_zoom, layer_compositions, web_compatible, include_timestamp, name, description, attribution, attribution_mode
+            extent,
+            min_zoom,
+            max_zoom,
+            layer_compositions,
+            web_compatible,
+            include_timestamp,
+            name,
+            description,
+            attribution,
+            attribution_mode,
         )
 
     def estimate_tiles(
-        self,
-        extent: Extent,
-        min_zoom: int,
-        max_zoom: int,
-        layer_compositions: list[LayerComposition],
-        **options
+        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], **options
     ) -> dict:
         """Estimate tile count and size for KMZ output.
 
@@ -112,9 +116,7 @@ class KMZOutputHandler:
             # Web compatible mode: calculate chunks at the max zoom
             # (web compatible uses a single zoom level)
             chunk_count = TileCalculator.calculate_chunks_at_zoom(
-                extent.min_lon, extent.min_lat, extent.max_lon, extent.max_lat,
-                max_zoom,
-                chunk_size=CHUNK_SIZE
+                extent.min_lon, extent.min_lat, extent.max_lon, extent.max_lat, max_zoom, chunk_size=CHUNK_SIZE
             )
 
             # Get total tiles for context
@@ -124,7 +126,7 @@ class KMZOutputHandler:
 
             # Estimate size
             # CHUNK_SIZE^2 tiles per chunk, ~6KB per tile after compression
-            avg_chunk_size_kb = (CHUNK_SIZE ** 2) * 6
+            avg_chunk_size_kb = (CHUNK_SIZE**2) * 6
             size_bytes = chunk_count * avg_chunk_size_kb * 1024
             size_mb = size_bytes / (1024 * 1024)
 

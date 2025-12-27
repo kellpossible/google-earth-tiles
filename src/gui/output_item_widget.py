@@ -139,9 +139,7 @@ class OutputItemWidget(QFrame):
         self.options_container.addWidget(self.options_widget)
 
         # Update estimates with current state
-        self.options_widget.update_estimates(
-            self.extent, self.min_zoom, self.max_zoom, self.layer_compositions
-        )
+        self.options_widget.update_estimates(self.extent, self.min_zoom, self.max_zoom, self.layer_compositions)
 
     def _on_type_changed(self):
         """Handle output type change."""
@@ -233,6 +231,4 @@ class OutputItemWidget(QFrame):
         if self.options_widget:
             options = self.options_widget.get_options()
 
-        return OutputConfig(
-            output_type=output_type, output_path=Path(self.path_edit.text()), options=options
-        )
+        return OutputConfig(output_type=output_type, output_path=Path(self.path_edit.text()), options=options)

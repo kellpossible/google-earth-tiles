@@ -13,35 +13,63 @@ required:
 
 properties:
   extent:
-    type: object
-    description: Geographic bounding box in WGS84 coordinates (longitude/latitude)
-    required:
-      - min_lon
-      - min_lat
-      - max_lon
-      - max_lat
-    properties:
-      min_lon:
-        type: number
-        minimum: -180
-        maximum: 180
-        description: Western boundary longitude in degrees
-      min_lat:
-        type: number
-        minimum: -90
-        maximum: 90
-        description: Southern boundary latitude in degrees
-      max_lon:
-        type: number
-        minimum: -180
-        maximum: 180
-        description: Eastern boundary longitude in degrees
-      max_lat:
-        type: number
-        minimum: -90
-        maximum: 90
-        description: Northern boundary latitude in degrees
-    additionalProperties: false
+    description: Geographic extent specification (direct coordinates or from KML file)
+    oneOf:
+      # Lat/Lon mode - direct coordinate specification
+      - type: object
+        required:
+          - type
+          - min_lon
+          - min_lat
+          - max_lon
+          - max_lat
+        properties:
+          type:
+            type: string
+            const: latlon
+            description: Direct lat/lon coordinate specification
+          min_lon:
+            type: number
+            minimum: -180
+            maximum: 180
+            description: Western boundary longitude in degrees
+          min_lat:
+            type: number
+            minimum: -90
+            maximum: 90
+            description: Southern boundary latitude in degrees
+          max_lon:
+            type: number
+            minimum: -180
+            maximum: 180
+            description: Eastern boundary longitude in degrees
+          max_lat:
+            type: number
+            minimum: -90
+            maximum: 90
+            description: Northern boundary latitude in degrees
+        additionalProperties: false
+
+      # File mode - KML file with optional padding
+      - type: object
+        required:
+          - type
+          - file
+        properties:
+          type:
+            type: string
+            const: file
+            description: KML file-based extent specification
+          file:
+            type: string
+            minLength: 1
+            description: Path to KML file (relative to config file or absolute)
+          padding:
+            type: number
+            minimum: 0
+            default: 0
+            description: Optional uniform padding in meters (applied to all sides)
+        additionalProperties: false
 
   min_zoom:
     type: integer
