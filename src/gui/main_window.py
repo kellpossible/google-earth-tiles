@@ -367,7 +367,9 @@ class MainWindow(QMainWindow):
     def _create_menu_bar(self):
         """Create the menu bar with File menu."""
         menubar = self.menuBar()
+        assert menubar is not None  # QMainWindow always has a menubar
         self.file_menu = menubar.addMenu("&File")
+        assert self.file_menu is not None  # addMenu always returns a menu
 
         # Open
         open_action = QAction("&Open...", self)
@@ -518,6 +520,9 @@ class MainWindow(QMainWindow):
     def _load_initial_config(self):
         """Load initial config file provided via command line."""
         from pathlib import Path
+
+        if not self.initial_config_file:
+            return
 
         try:
             file_path = Path(self.initial_config_file)

@@ -1,22 +1,21 @@
 """Generation request model."""
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
-from src.models.output_config import OutputConfig
+from src.models.outputs import OutputUnion
 
 
 @dataclass
 class GenerationRequest:
-    """Request parameters for KMZ generation."""
+    """Request parameters for generation."""
 
     layer_compositions: list[LayerComposition]
     min_zoom: int
     max_zoom: int
     extent: Extent
-    outputs: list[OutputConfig]
+    outputs: list[OutputUnion]
     include_timestamp: bool = True
     name: str | None = None
     description: str | None = None
@@ -56,14 +55,7 @@ class GenerationRequest:
             min_zoom=self.min_zoom,
             max_zoom=self.max_zoom,
             extent=self.extent.copy(),
-            outputs=[
-                OutputConfig(
-                    output_type=output.output_type,
-                    output_path=Path(output.output_path),
-                    options={"web_compatible": output.web_compatible},
-                )
-                for output in self.outputs
-            ],
+            outputs=[output.model_copy(deep=True) for output in self.outputs],
             include_timestamp=self.include_timestamp,
             name=self.name,
             description=self.description,

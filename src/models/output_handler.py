@@ -1,10 +1,14 @@
 """Protocol for output format handlers."""
 
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
+
+if TYPE_CHECKING:
+    from src.models.extent_config import ExtentConfig
+    from src.models.outputs import OutputUnion
 
 
 class OutputHandler(Protocol):
@@ -57,8 +61,13 @@ class OutputHandler(Protocol):
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: "OutputUnion",
         progress_callback=None,
-        **options,
+        name: str | None = None,
+        description: str | None = None,
+        attribution: str | None = None,
+        extent_config: "ExtentConfig | None" = None,
+        include_timestamp: bool = True,
     ) -> Path:
         """Generate the output file.
 
@@ -68,8 +77,13 @@ class OutputHandler(Protocol):
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions to include
+            output: Output configuration model (KMZOutput, MBTilesOutput, or GeoTIFFOutput)
             progress_callback: Optional callback for progress updates (current, total, message)
-            **options: Format-specific options
+            name: Document name/title
+            description: Document description
+            attribution: Attribution text
+            extent_config: Extent configuration (for KML merging)
+            include_timestamp: Include timestamp in output
 
         Returns:
             Path to the created output file
@@ -80,7 +94,7 @@ class OutputHandler(Protocol):
         ...
 
     def estimate_tiles(
-        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], **options
+        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], output: "OutputUnion"
     ) -> dict:
         """Estimate tile count and size for this output.
 
@@ -89,7 +103,7 @@ class OutputHandler(Protocol):
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions
-            **options: Format-specific options
+            output: Output configuration model (KMZOutput, MBTilesOutput, or GeoTIFFOutput)
 
         Returns:
             Dictionary with estimation data:

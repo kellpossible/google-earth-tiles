@@ -111,103 +111,140 @@ properties:
     minItems: 1
     description: Output configurations. At least one output is required. Each output specifies a file format and path.
     items:
-      type: object
-      required:
-        - path
-      properties:
-        type:
-          type: string
-          enum:
-            - kmz
-            - mbtiles
-            - geotiff
-          default: kmz
-          description: Output format type
-        path:
-          type: string
-          minLength: 1
-          description: Output file path
+      oneOf:
+        # KMZ Output
+        - title: KMZOutput
+          type: object
+          required:
+            - type
+            - path
+          properties:
+            type:
+              type: string
+              const: kmz
+              description: KMZ output format
+            path:
+              type: string
+              description: Output file path
+            web_compatible:
+              type: boolean
+              default: false
+              description: "Enable Google Earth Web compatibility (merges tiles, single zoom level)"
+            attribution_mode:
+              type: string
+              enum:
+                - description
+                - overlay
+              default: description
+              description: "How to display attribution - in description or as overlay"
+            merge_extent_kml:
+              type: boolean
+              default: false
+              description: "Merge entire KML structure from extent file into generated KMZ. Only works when extent.type is 'file' and extent file is KML format."
+          additionalProperties: false
 
-        # KMZ-specific options
-        web_compatible:
-          type: boolean
-          default: false
-          description: "KMZ only: Enable Google Earth Web compatibility (merges tiles, single zoom level)"
-        attribution_mode:
-          type: string
-          enum:
-            - description
-            - overlay
-          default: description
-          description: "KMZ only: How to display attribution - in description or as overlay"
-        merge_extent_kml:
-          type: boolean
-          default: false
-          description: "KMZ only: Merge entire KML structure from extent file into generated KMZ. Only works when extent.type is 'file' and extent file is KML format."
+        # MBTiles Output
+        - title: MBTilesOutput
+          type: object
+          required:
+            - type
+            - path
+          properties:
+            type:
+              type: string
+              const: mbtiles
+              description: MBTiles output format
+            path:
+              type: string
+              description: Output file path
+            image_format:
+              type: string
+              enum:
+                - png
+                - jpg
+              default: png
+              description: "Tile image format"
+            jpeg_quality:
+              type: integer
+              minimum: 1
+              maximum: 100
+              default: 80
+              description: "JPEG quality (1-100, only used with JPEG format)"
+            export_mode:
+              type: string
+              enum:
+                - composite
+                - separate
+              default: composite
+              description: "Export as single composite or separate files per layer"
+            metadata_name:
+              type: string
+              description: "Name in MBTiles metadata (overrides global name)"
+            metadata_description:
+              type: string
+              description: "Description in MBTiles metadata (overrides global description)"
+            metadata_type:
+              type: string
+              enum:
+                - baselayer
+                - overlay
+              default: overlay
+              description: "Map type in metadata"
+          additionalProperties: false
 
-        # MBTiles-specific options
-        image_format:
-          type: string
-          enum:
-            - png
-            - jpg
-          default: png
-          description: "MBTiles only: Tile image format"
-        jpeg_quality:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 80
-          description: "MBTiles/GeoTIFF only: JPEG quality (1-100, only used with JPEG compression)"
-        export_mode:
-          type: string
-          enum:
-            - composite
-            - separate
-          default: composite
-          description: "MBTiles/GeoTIFF only: Export as single composite or separate files per layer"
-        metadata_name:
-          type: string
-          description: "MBTiles only: Name in MBTiles metadata (overrides global name)"
-        metadata_description:
-          type: string
-          description: "MBTiles only: Description in MBTiles metadata (overrides global description)"
-        metadata_type:
-          type: string
-          enum:
-            - baselayer
-            - overlay
-          default: overlay
-          description: "MBTiles only: Map type in metadata"
-
-        # GeoTIFF-specific options
-        compression:
-          type: string
-          enum:
-            - lzw
-            - deflate
-            - jpeg
-            - none
-          default: lzw
-          description: "GeoTIFF only: Compression method"
-        multi_zoom:
-          type: boolean
-          default: true
-          description: "GeoTIFF only: Include pyramids for all zoom levels (true) or single zoom (false)"
-        tiled:
-          type: boolean
-          default: true
-          description: "GeoTIFF only: Use tiled format for optimized random access"
-        tile_size:
-          type: integer
-          enum:
-            - 128
-            - 256
-            - 512
-          default: 256
-          description: "GeoTIFF only: Internal tile size in pixels (typically 256)"
-
-      additionalProperties: false
+        # GeoTIFF Output
+        - title: GeoTIFFOutput
+          type: object
+          required:
+            - type
+            - path
+          properties:
+            type:
+              type: string
+              const: geotiff
+              description: GeoTIFF output format
+            path:
+              type: string
+              description: Output file path
+            compression:
+              type: string
+              enum:
+                - lzw
+                - deflate
+                - jpeg
+                - none
+              default: lzw
+              description: "Compression method"
+            jpeg_quality:
+              type: integer
+              minimum: 1
+              maximum: 100
+              default: 80
+              description: "JPEG quality (1-100, only used with JPEG compression)"
+            export_mode:
+              type: string
+              enum:
+                - composite
+                - separate
+              default: composite
+              description: "Export as single composite or separate files per layer"
+            multi_zoom:
+              type: boolean
+              default: true
+              description: "Include pyramids for all zoom levels (true) or single zoom (false)"
+            tiled:
+              type: boolean
+              default: true
+              description: "Use tiled format for optimized random access"
+            tile_size:
+              type: integer
+              enum:
+                - 128
+                - 256
+                - 512
+              default: 256
+              description: "Internal tile size in pixels (typically 256)"
+          additionalProperties: false
 
   layers:
     type: array

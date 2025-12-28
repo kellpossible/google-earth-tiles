@@ -6,6 +6,7 @@ from src.core.kmz_generator import KMZGenerator
 from src.core.tile_calculator import CHUNK_SIZE, TileCalculator
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
+from src.models.outputs import KMZOutput
 
 
 class KMZOutputHandler:
@@ -41,12 +42,13 @@ class KMZOutputHandler:
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: KMZOutput,
         progress_callback=None,
         name: str | None = None,
         description: str | None = None,
         attribution: str | None = None,
         extent_config=None,
-        **options,
+        include_timestamp: bool = True,
     ) -> Path:
         """Generate a KMZ file.
 
@@ -56,24 +58,21 @@ class KMZOutputHandler:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions to include
+            output: KMZ output configuration with type-safe options
             progress_callback: Optional callback for progress updates
             name: Document name/title (optional, uses default based on zoom if None)
             description: Document description (optional, shown in KML description)
             attribution: Global attribution string (optional, auto-generates from layers if None)
             extent_config: ExtentConfig object (needed for KML merging, optional)
-            **options: KMZ-specific options:
-                - web_compatible (bool): Enable web compatible mode (default: False)
-                - include_timestamp (bool): Include timestamp in KML (default: True)
-                - attribution_mode (str): "description" or "overlay" (default: "description")
-                - merge_extent_kml (bool): Merge extent KML into output (default: False)
+            include_timestamp: Include timestamp in KML (default: True)
 
         Returns:
             Path to the created KMZ file
         """
-        web_compatible = options.get("web_compatible", False)
-        include_timestamp = options.get("include_timestamp", True)
-        attribution_mode = options.get("attribution_mode", "description")
-        merge_extent_kml = options.get("merge_extent_kml", False)
+        # Access options directly from the model (type-safe)
+        web_compatible = output.web_compatible or False
+        attribution_mode = output.attribution_mode or "description"
+        merge_extent_kml = output.merge_extent_kml or False
 
         generator = KMZGenerator(output_path, progress_callback)
 
@@ -111,7 +110,7 @@ class KMZOutputHandler:
         )
 
     def estimate_tiles(
-        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], **options
+        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], output: KMZOutput
     ) -> dict:
         """Estimate tile count and size for KMZ output.
 
@@ -120,13 +119,12 @@ class KMZOutputHandler:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions
-            **options: KMZ-specific options:
-                - web_compatible (bool): Enable web compatible mode
+            output: KMZ output configuration
 
         Returns:
             Dictionary with estimation data
         """
-        web_compatible = options.get("web_compatible", False)
+        web_compatible = output.web_compatible or False
         enabled_layers = [comp for comp in layer_compositions if comp.enabled]
 
         if not enabled_layers:

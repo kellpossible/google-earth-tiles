@@ -41,6 +41,8 @@ codegen:
         --field-constraints \
         --snake-case-field \
         --use-default \
+        --use-default-kwarg \
+        --set-default-enum-member \
         --enable-version-header \
         --target-python-version 3.11
     uv run ruff format src/models/generated.py

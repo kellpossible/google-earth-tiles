@@ -4,12 +4,14 @@ import logging
 from pathlib import Path
 
 import yaml
+from pydantic import ValidationError
 
 from src.core.config import LAYERS, build_layer_registry
 from src.core.tile_calculator import TileCalculator
 from src.models.extent_config import ExtentConfig
+from src.models.generated import GoogleEarthTileGeneratorConfiguration
 from src.models.layer_composition import LayerComposition
-from src.models.output_config import OutputConfig
+from src.models.outputs import KMZOutput
 from src.outputs import get_output_handler
 from src.utils.kml_extent import calculate_extent_from_kml
 
@@ -117,6 +119,9 @@ def run_cli(config_path: str) -> int:
 
         # Resolve file-based extent if needed
         if extent_config.mode == "file":
+            if extent_config.file_path is None:
+                logger.error("File path is required when extent mode is 'file'")
+                return 1
             try:
                 resolved_extent = calculate_extent_from_kml(extent_config.file_path, extent_config.padding_meters)
                 extent_config._resolved_extent = resolved_extent
@@ -135,7 +140,7 @@ def run_cli(config_path: str) -> int:
                     # Log what was extracted
                     if extracted.get("name"):
                         logger.info(f"Extracted name from KML: {extracted['name']}")
-                    if extracted.get("description"):
+                    if extracted.get("description") and extracted["description"] is not None:
                         desc_preview = extracted["description"][:50]
                         logger.info(f"Extracted description from KML: {desc_preview}...")
 
@@ -160,18 +165,20 @@ def run_cli(config_path: str) -> int:
         if not extent.is_fully_within_japan_region():
             logger.warning("Extent is partially outside valid region. Some tiles may not be available.")
 
-        # Parse outputs
-        outputs = []
-        for output_dict in config["outputs"]:
-            try:
-                outputs.append(OutputConfig.from_dict(output_dict, config_dir=config_dir))
-            except Exception as e:
-                logger.error(f"Invalid output configuration: {e}")
-                return 1
-
-        if not outputs:
-            logger.error("No outputs specified. At least one output is required.")
+        # Validate and parse entire config with Pydantic
+        try:
+            validated_config = GoogleEarthTileGeneratorConfiguration(**config)
+        except ValidationError as e:
+            logger.error(f"Invalid configuration: {e}")
             return 1
+
+        # Extract outputs (already validated and typed)
+        outputs = validated_config.outputs
+
+        # Convert relative paths to absolute (resolve relative to config file)
+        for output in outputs:
+            if not Path(output.path).is_absolute():
+                output.path = str(config_dir / output.path)
 
         layer_specs = config["layers"]
 
@@ -244,30 +251,31 @@ def run_cli(config_path: str) -> int:
 
         for idx, output_config in enumerate(outputs, 1):
             # Get the output handler for this type
-            handler = get_output_handler(output_config.output_type)
+            handler = get_output_handler(output_config.type)
 
+            output_path = Path(output_config.path)
             logger.info(
-                f"Generating output {idx}/{len(outputs)} ({handler.get_display_name()}): {output_config.output_path}"
+                f"Generating output {idx}/{len(outputs)} ({handler.get_display_name()}): {output_path}"
             )
 
             # Log format-specific options
-            if output_config.web_compatible:
+            if isinstance(output_config, KMZOutput) and output_config.web_compatible:
                 logger.info(f"  Web compatible mode enabled: single zoom level {max_zoom}")
 
             # Generate output using the handler
             result_path = handler.generate(
-                output_path=output_config.output_path,
+                output_path=output_path,
                 extent=extent,
                 min_zoom=min_zoom,
                 max_zoom=max_zoom,
                 layer_compositions=layer_compositions,
+                output=output_config,
                 progress_callback=None,
                 name=name,
                 description=description,
                 attribution=attribution,
                 extent_config=extent_config,
                 include_timestamp=include_timestamp,
-                **output_config.options,
             )
             logger.info(f"✓ Created: {result_path}")
 

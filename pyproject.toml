@@ -53,6 +53,8 @@ python-version = "3.11"  # Minimum supported version from requires-python
 [tool.ty.src]
 # Respect .gitignore and similar files for exclusions
 respect-ignore-files = true
+# Exclude generated files from type checking
+exclude = ["src/models/generated.py"]
 
 [tool.ruff]
 # Target Python 3.11+

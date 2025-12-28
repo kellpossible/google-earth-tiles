@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 from src.gui.output_options import get_options_widget
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
-from src.models.output_config import OutputConfig
+from src.models.outputs import GeoTIFFOutput, KMZOutput, MBTilesOutput, OutputUnion
 from src.outputs import get_output_handler
 
 if TYPE_CHECKING:
@@ -33,11 +33,11 @@ class OutputItemWidget(QFrame):
     changed = pyqtSignal()  # Settings changed
     remove_requested = pyqtSignal()  # User wants to remove
 
-    def __init__(self, output_config: OutputConfig, parent=None):
+    def __init__(self, output_config: OutputUnion, parent=None):
         """Initialize output item widget.
 
         Args:
-            output_config: Output configuration
+            output_config: Output configuration (KMZ, MBTiles, or GeoTIFF)
             parent: Parent widget
         """
         super().__init__(parent)
@@ -73,7 +73,7 @@ class OutputItemWidget(QFrame):
         self.type_combo.addItem("MBTiles", "mbtiles")
         self.type_combo.addItem("GeoTIFF", "geotiff")
         # Set to the actual output type from config
-        index = self.type_combo.findData(self.output_config.output_type)
+        index = self.type_combo.findData(self.output_config.type)
         if index >= 0:
             self.type_combo.setCurrentIndex(index)
         self.type_combo.setEnabled(True)
@@ -97,7 +97,7 @@ class OutputItemWidget(QFrame):
 
         self.path_edit = QLineEdit()
         # Show empty string if path is empty, not "."
-        path_str = str(self.output_config.output_path) if self.output_config.output_path != Path("") else ""
+        path_str = str(self.output_config.path) if self.output_config.path else ""
         self.path_edit.setText(path_str)
         self.path_edit.setPlaceholderText("Select output file...")
         self.path_edit.textChanged.connect(self._on_path_changed)
@@ -116,7 +116,7 @@ class OutputItemWidget(QFrame):
         self.setLayout(layout)
 
         # Create initial options widget
-        self._create_options_widget(self.output_config.output_type)
+        self._create_options_widget(self.output_config.type)
 
     def _create_options_widget(self, output_type: str):
         """Create and add the options widget for the given output type.
@@ -131,8 +131,10 @@ class OutputItemWidget(QFrame):
             self.options_widget = None
 
         # Create new options widget
+        # Extract options from model (exclude type and path)
+        options = self.output_config.model_dump(exclude={"type", "path"})
         widget_class = get_options_widget(output_type)
-        self.options_widget = widget_class(self.output_config.options, parent=self)
+        self.options_widget = widget_class(options, parent=self)
         self.options_widget.changed.connect(self.changed.emit)
 
         # Add to container
@@ -160,16 +162,24 @@ class OutputItemWidget(QFrame):
                 new_path = current_path.with_suffix(f".{new_ext}")
                 self.path_edit.setText(str(new_path))
 
+        # Create new model instance for the new type
+        current_path_str = self.path_edit.text() or ""
+        if output_type == "kmz":
+            self.output_config = KMZOutput(type="kmz", path=current_path_str)
+        elif output_type == "mbtiles":
+            self.output_config = MBTilesOutput(type="mbtiles", path=current_path_str)
+        elif output_type == "geotiff":
+            self.output_config = GeoTIFFOutput(type="geotiff", path=current_path_str)
+
         # Recreate options widget for new type
         self._create_options_widget(output_type)
 
-        # Update config
-        self.output_config.output_type = output_type
         self.changed.emit()
 
     def _on_path_changed(self):
         """Handle path change."""
-        self.output_config.output_path = Path(self.path_edit.text())
+        # Update the path field on the model (can't assign to immutable Pydantic model)
+        # Need to recreate the model - will be handled in get_config()
         self.changed.emit()
 
     def _browse_output_path(self):
@@ -181,8 +191,8 @@ class OutputItemWidget(QFrame):
         default_ext = handler.get_file_extension()
 
         # Default to current path or home directory with appropriate extension
-        if self.output_config.output_path and str(self.output_config.output_path):
-            default_path = str(self.output_config.output_path)
+        if self.output_config.path:
+            default_path = str(self.output_config.path)
         else:
             default_path = str(Path.home() / f"tiles.{default_ext}")
 
@@ -218,17 +228,27 @@ class OutputItemWidget(QFrame):
         if self.options_widget:
             self.options_widget.update_estimates(extent, min_zoom, max_zoom, layer_compositions)
 
-    def get_config(self) -> OutputConfig:
+    def get_config(self) -> OutputUnion:
         """Get the current output configuration.
 
         Returns:
-            OutputConfig instance with current settings
+            Output model instance (KMZ, MBTiles, or GeoTIFF) with current settings
         """
         output_type = self.type_combo.currentData()
+        path = self.path_edit.text()
 
         # Get options from the options widget
         options = {}
         if self.options_widget:
             options = self.options_widget.get_options()
 
-        return OutputConfig(output_type=output_type, output_path=Path(self.path_edit.text()), options=options)
+        # Create the appropriate model type with current path and options
+        if output_type == "kmz":
+            return KMZOutput(type="kmz", path=path, **options)
+        elif output_type == "mbtiles":
+            return MBTilesOutput(type="mbtiles", path=path, **options)
+        elif output_type == "geotiff":
+            return GeoTIFFOutput(type="geotiff", path=path, **options)
+        else:
+            # Fallback (shouldn't happen)
+            return KMZOutput(type="kmz", path=path)

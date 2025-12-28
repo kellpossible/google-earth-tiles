@@ -8,6 +8,7 @@ from src.core.mbtiles_generator import MBTilesGenerator
 from src.core.tile_calculator import TileCalculator
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
+from src.models.outputs import MBTilesOutput
 from src.utils.attribution import build_attribution_from_layers
 
 logger = logging.getLogger(__name__)
@@ -83,11 +84,13 @@ class MBTilesOutputHandler:
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: MBTilesOutput,
         progress_callback=None,
         name: str | None = None,
         description: str | None = None,
         attribution: str | None = None,
-        **options,
+        extent_config=None,
+        include_timestamp: bool = True,
     ) -> Path:
         """Generate MBTiles file(s).
 
@@ -97,20 +100,16 @@ class MBTilesOutputHandler:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions to include
+            output: MBTiles output configuration with type-safe options
             progress_callback: Optional callback for progress updates
             name: Global name/title for the tileset (default: "Tile Export")
             description: Global description for the tileset (optional)
             attribution: Global attribution string (optional, auto-generates from layers if None)
-            **options: MBTiles-specific options:
-                - image_format (str): "png" or "jpg" (default: "png")
-                - export_mode (str): "composite" or "separate" (default: "composite")
-                - jpeg_quality (int): JPEG quality 1-100 (default: 80)
-                - metadata_type (str): "overlay" or "baselayer"
 
         Returns:
             Path to the created MBTiles file (or first file if separate mode)
         """
-        export_mode = options.get("export_mode", "composite")
+        export_mode = output.export_mode or "composite"
 
         if export_mode == "composite":
             return self._generate_composite(
@@ -119,11 +118,11 @@ class MBTilesOutputHandler:
                 min_zoom,
                 max_zoom,
                 layer_compositions,
+                output,
                 progress_callback,
                 name,
                 description,
                 attribution,
-                **options,
             )
         else:
             return self._generate_separate(
@@ -132,11 +131,11 @@ class MBTilesOutputHandler:
                 min_zoom,
                 max_zoom,
                 layer_compositions,
+                output,
                 progress_callback,
                 name,
                 description,
                 attribution,
-                **options,
             )
 
     @staticmethod
@@ -167,11 +166,11 @@ class MBTilesOutputHandler:
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: MBTilesOutput,
         progress_callback,
         name: str | None = None,
         description: str | None = None,
         attribution: str | None = None,
-        **options,
     ) -> Path:
         """Generate single composite MBTiles file.
 
@@ -181,8 +180,8 @@ class MBTilesOutputHandler:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions
+            output: MBTiles output configuration
             progress_callback: Progress callback function
-            **options: MBTiles options
 
         Returns:
             Path to created MBTiles file
@@ -200,10 +199,10 @@ class MBTilesOutputHandler:
         final_attribution = self._build_attribution(enabled_layers, attribution or "")
 
         metadata_config = {
-            "name": name or "Tile Export",
-            "description": description or "",
+            "name": output.metadata_name or name or "Tile Export",
+            "description": output.metadata_description or description or "",
             "attribution": final_attribution,
-            "type": options.get("metadata_type", "overlay"),
+            "type": output.metadata_type or "overlay",
         }
 
         # Run async generation (Python 3.14 compatible)
@@ -213,9 +212,9 @@ class MBTilesOutputHandler:
                 min_zoom,
                 max_zoom,
                 enabled_layers,
-                options.get("image_format", "png"),
+                output.image_format or "png",
                 metadata_config,
-                options.get("jpeg_quality", 80),
+                output.jpeg_quality or 80,
             )
         )
 
@@ -226,11 +225,11 @@ class MBTilesOutputHandler:
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: MBTilesOutput,
         progress_callback,
         name: str | None = None,
         description: str | None = None,
         attribution: str | None = None,
-        **options,
     ) -> Path:
         """Generate separate MBTiles files, one per layer.
 
@@ -241,7 +240,7 @@ class MBTilesOutputHandler:
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions
             progress_callback: Progress callback function
-            **options: MBTiles options
+            output: MBTiles output configuration
 
         Returns:
             Path to first created MBTiles file
@@ -267,7 +266,7 @@ class MBTilesOutputHandler:
                 "name": f"{metadata_name} - {layer_id}",
                 "description": description or "",
                 "attribution": layer_attribution,
-                "type": options.get("metadata_type", "overlay"),
+                "type": output.metadata_type or "overlay",
             }
 
             # Remove existing file if it exists
@@ -293,9 +292,9 @@ class MBTilesOutputHandler:
                     min_zoom,
                     max_zoom,
                     [layer_comp],
-                    options.get("image_format", "png"),
+                    output.image_format or "png",
                     layer_metadata,
-                    options.get("jpeg_quality", 80),
+                    output.jpeg_quality or 80,
                 )
             )
 
@@ -305,7 +304,7 @@ class MBTilesOutputHandler:
         return generated_files[0] if generated_files else output_path
 
     def estimate_tiles(
-        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], **options
+        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], output: MBTilesOutput
     ) -> dict:
         """Estimate tile count and size for MBTiles output.
 
@@ -314,9 +313,7 @@ class MBTilesOutputHandler:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions
-            **options: MBTiles-specific options:
-                - image_format (str): "png" or "jpg"
-                - export_mode (str): "composite" or "separate"
+            output: MBTiles output configuration
 
         Returns:
             Dictionary with estimation data:
@@ -341,12 +338,12 @@ class MBTilesOutputHandler:
         )
 
         # Estimate size based on format
-        image_format = options.get("image_format", "png")
+        image_format = output.image_format or "png"
         # PNG tiles: ~50KB average (varies by content), JPEG tiles: ~30KB average (compressed)
         avg_tile_kb = 50 if image_format == "png" else 30
 
         # Account for export mode
-        export_mode = options.get("export_mode", "composite")
+        export_mode = output.export_mode or "composite"
         if export_mode == "separate":
             # Multiple files, one per layer
             file_count = len(enabled_layers)

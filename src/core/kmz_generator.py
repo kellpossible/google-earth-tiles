@@ -172,8 +172,9 @@ class KMZGenerator(BaseTileGenerator):
         screen.overlayxy = simplekml.OverlayXY(
             x=0, y=0, xunits=simplekml.Units.fraction, yunits=simplekml.Units.fraction
         )
-        screen.screenxy = simplekml.ScreenXY(x=10, y=10, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)
-        screen.size = simplekml.Size(x=0, y=0, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)
+        # Type checker doesn't recognize Units.pixel, but it exists at runtime
+        screen.screenxy = simplekml.ScreenXY(x=10, y=10, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)  # type: ignore[attr-defined]
+        screen.size = simplekml.Size(x=0, y=0, xunits=simplekml.Units.pixel, yunits=simplekml.Units.pixel)  # type: ignore[attr-defined]
 
         logger.info("Added attribution screen overlay to KML")
 

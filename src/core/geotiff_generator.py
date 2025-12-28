@@ -330,12 +330,11 @@ class GeoTIFFGenerator(BaseTileGenerator):
 
             # Calculate total tiles for progress tracking
             total_tiles = len(tiles_at_max_zoom)
-            processed = 0
 
             # Fetch and write tiles
             logger.info(f"Fetching and writing {total_tiles} tiles...")
 
-            for x, y in sorted(tiles_at_max_zoom, key=lambda t: (t[1], t[0])):  # Sort by (y, x) for row-major order
+            for processed, (x, y) in enumerate(sorted(tiles_at_max_zoom, key=lambda t: (t[1], t[0])), start=1):
                 # Composite tile
                 tile_data = await self.compositor.composite_tile(x, y, max_zoom, layer_compositions)
 
@@ -347,7 +346,6 @@ class GeoTIFFGenerator(BaseTileGenerator):
                     # Write tile to raster
                     self._write_tile_to_raster(dataset, tile_data, x_offset, y_offset, bands)
 
-                processed += 1
                 if self.progress_callback:
                     self.progress_callback(processed, total_tiles, f"Writing tile {processed}/{total_tiles}...")
 

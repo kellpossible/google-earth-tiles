@@ -29,13 +29,14 @@ from PyQt6.QtWidgets import (
 
 from src.core.config import CATEGORIES, DEFAULT_ZOOM, LAYERS, LayerConfig
 from src.gui.extent_widget import ExtentWidget
+from src.gui.file_operations import FileOperations
 from src.gui.output_item_widget import OutputItemWidget
 from src.gui.zoom_range_widget import ZoomRangeWidget
 from src.models.extent import Extent
 from src.models.extent_config import ExtentConfig
 from src.models.generation_request import GenerationRequest
 from src.models.layer_composition import LayerComposition
-from src.models.output_config import OutputConfig
+from src.models.outputs import KMZOutput, OutputUnion
 
 # Blend modes supported by KML (Google Earth)
 BLEND_MODES = [
@@ -601,6 +602,7 @@ class SettingsPanel(QWidget):
         self.current_name: str = ""
         self.current_description: str = ""
         self.current_attribution: str = ""
+        self.file_operations: FileOperations | None = None  # Set externally by MainWindow
         self.init_ui()
 
     def init_ui(self):
@@ -654,6 +656,16 @@ class SettingsPanel(QWidget):
         self.attribution_edit.setMaximumHeight(80)  # ~3 lines
         self.attribution_edit.textChanged.connect(self._on_metadata_changed)
         metadata_layout.addWidget(self.attribution_edit)
+
+        # Extract metadata from extent KML checkbox
+        self.extract_extent_metadata_checkbox = QCheckBox("Extract name/description from extent KML file")
+        self.extract_extent_metadata_checkbox.setToolTip(
+            "When enabled and extent is loaded from a KML file, automatically extract\n"
+            "name and description metadata from the KML and use it to populate the fields above."
+        )
+        self.extract_extent_metadata_checkbox.setChecked(False)
+        self.extract_extent_metadata_checkbox.stateChanged.connect(self._emit_state_changed)
+        metadata_layout.addWidget(self.extract_extent_metadata_checkbox)
 
         # Info label
         info_label = QLabel("This metadata will be included in all output formats (MBTiles metadata, KMZ description)")
@@ -784,7 +796,7 @@ class SettingsPanel(QWidget):
         self._update_zoom_range()
 
         # Start with one empty output pre-added
-        default_output = OutputConfig(output_type="kmz", output_path=Path(""), options={"web_compatible": False})
+        default_output = KMZOutput(type="kmz", path="")
         self._add_output_widget(default_output)
 
     def _on_layer_changed(self):
@@ -1040,15 +1052,15 @@ class SettingsPanel(QWidget):
 
     def _on_add_output_clicked(self):
         """Add new output widget."""
-        default_output = OutputConfig(output_type="kmz", output_path=Path(""), options={"web_compatible": False})
+        default_output = KMZOutput(type="kmz", path="")
         self._add_output_widget(default_output)
         self._emit_state_changed()
 
-    def _add_output_widget(self, output_config: OutputConfig):
+    def _add_output_widget(self, output_config: OutputUnion):
         """Add an output widget to the UI.
 
         Args:
-            output_config: Output configuration
+            output_config: Output configuration (KMZ, MBTiles, or GeoTIFF)
         """
         widget = OutputItemWidget(output_config, self)
         widget.changed.connect(self._on_output_changed)
@@ -1184,7 +1196,7 @@ class SettingsPanel(QWidget):
         # Validate that all outputs have paths specified
         empty_outputs = []
         for idx, output in enumerate(outputs, 1):
-            if str(output.output_path) in ("", "."):
+            if str(output.path) in ("", "."):
                 empty_outputs.append(idx)
 
         if empty_outputs:
@@ -1250,11 +1262,15 @@ class SettingsPanel(QWidget):
 
         # Collect outputs from all output widgets
         # Convert absolute paths to relative if they're under the config directory
-        config_dir = Path(self.file_operations.current_file).parent if self.file_operations.current_file else None
+        config_dir = (
+            Path(self.file_operations.current_file).parent
+            if self.file_operations and self.file_operations.current_file
+            else None
+        )
 
         outputs = []
         for widget in self.output_widgets:
-            output_dict = widget.get_config().to_dict()
+            output_dict = widget.get_config().model_dump()
 
             # Make output path relative to config directory if possible
             if config_dir:
@@ -1299,6 +1315,7 @@ class SettingsPanel(QWidget):
             "name": self.current_name if self.current_name else None,
             "description": self.current_description if self.current_description else None,
             "attribution": self.current_attribution if self.current_attribution else None,
+            "extract_extent_metadata": self.extract_extent_metadata_checkbox.isChecked(),
             "outputs": outputs,
             "layers": [comp.to_dict() for comp in layer_compositions],
         }
@@ -1377,11 +1394,29 @@ class SettingsPanel(QWidget):
 
             # 5. Load outputs
             config_dir = (
-                Path(self.file_operations.current_file).parent if self.file_operations.current_file else Path.cwd()
+                Path(self.file_operations.current_file).parent
+                if self.file_operations and self.file_operations.current_file
+                else Path.cwd()
             )
-            for output_dict in state["outputs"]:
-                output_config = OutputConfig.from_dict(output_dict, config_dir=config_dir)
-                self._add_output_widget(output_config)
+            # Parse outputs using Pydantic models
+            from pydantic import ValidationError
+
+            from src.models.generated import GoogleEarthTileGeneratorConfiguration
+
+            try:
+                validated_config = GoogleEarthTileGeneratorConfiguration(**state)
+                for output_config in validated_config.outputs:
+                    # Convert relative paths to absolute
+                    if not Path(output_config.path).is_absolute():
+                        output_config.path = str(config_dir / output_config.path)
+                    self._add_output_widget(output_config)
+            except ValidationError as e:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(f"Invalid output configuration: {e}")
+                # Add a default output on error
+                self._add_output_widget(KMZOutput(type="kmz", path=""))
 
             # 6. Set extent
             extent_data = state["extent"]
@@ -1390,7 +1425,9 @@ class SettingsPanel(QWidget):
             if extent_mode == "file":
                 # Load file-based extent
                 config_dir = (
-                    Path(self.file_operations.current_file).parent if self.file_operations.current_file else Path.cwd()
+                    Path(self.file_operations.current_file).parent
+                    if self.file_operations and self.file_operations.current_file
+                    else Path.cwd()
                 )
                 extent_config = ExtentConfig.from_dict(extent_data, config_dir=config_dir)
 
@@ -1422,6 +1459,9 @@ class SettingsPanel(QWidget):
             attribution = state.get("attribution", "")
             self.current_attribution = attribution
             self.attribution_edit.setPlainText(attribution)
+
+            extract_extent_metadata = state.get("extract_extent_metadata", False)
+            self.extract_extent_metadata_checkbox.setChecked(extract_extent_metadata)
 
         finally:
             self._suppress_state_changes = False

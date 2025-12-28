@@ -8,6 +8,7 @@ from src.core.geotiff_generator import GeoTIFFGenerator
 from src.core.tile_calculator import TileCalculator
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
+from src.models.outputs import GeoTIFFOutput
 from src.utils.attribution import build_attribution_from_layers
 
 logger = logging.getLogger(__name__)
@@ -89,11 +90,13 @@ class GeoTIFFOutputHandler:
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: GeoTIFFOutput,
         progress_callback=None,
         name: str | None = None,
         description: str | None = None,
         attribution: str | None = None,
-        **options,
+        extent_config=None,
+        include_timestamp: bool = True,
     ) -> Path:
         """Generate GeoTIFF file(s).
 
@@ -103,22 +106,16 @@ class GeoTIFFOutputHandler:
             min_zoom: Minimum zoom level
             max_zoom: Maximum zoom level
             layer_compositions: List of layer compositions to include
+            output: GeoTIFF output configuration with type-safe options
             progress_callback: Optional callback for progress updates
             name: Global name/title for the tileset (unused for GeoTIFF)
             description: Global description for the tileset (unused for GeoTIFF)
             attribution: Global attribution string (optional, auto-generates from layers if None)
-            **options: GeoTIFF-specific options:
-                - compression (str): "lzw", "deflate", "jpeg", or "none" (default: "lzw")
-                - export_mode (str): "composite" or "separate" (default: "composite")
-                - multi_zoom (bool): Include pyramids for multi-zoom (default: True)
-                - jpeg_quality (int): JPEG quality 1-100 (default: 80)
-                - tiled (bool): Use tiled GeoTIFF format (default: True)
-                - tile_size (int): Internal tile size 256 or 512 (default: 256)
 
         Returns:
             Path to the created GeoTIFF file (or first file if separate mode)
         """
-        export_mode = options.get("export_mode", "composite")
+        export_mode = output.export_mode or "composite"
 
         if export_mode == "composite":
             return self._generate_composite(
@@ -127,9 +124,9 @@ class GeoTIFFOutputHandler:
                 min_zoom,
                 max_zoom,
                 layer_compositions,
+                output,
                 progress_callback,
                 attribution,
-                **options,
             )
         else:
             return self._generate_separate(
@@ -138,9 +135,9 @@ class GeoTIFFOutputHandler:
                 min_zoom,
                 max_zoom,
                 layer_compositions,
+                output,
                 progress_callback,
                 attribution,
-                **options,
             )
 
     @staticmethod
@@ -171,9 +168,9 @@ class GeoTIFFOutputHandler:
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: GeoTIFFOutput,
         progress_callback,
         attribution: str | None = None,
-        **options,
     ) -> Path:
         """Generate single composite GeoTIFF file.
 
@@ -209,11 +206,11 @@ class GeoTIFFOutputHandler:
                 min_zoom,
                 max_zoom,
                 enabled_layers,
-                compression=options.get("compression", "lzw"),
-                multi_zoom=options.get("multi_zoom", True),
-                jpeg_quality=options.get("jpeg_quality", 80),
-                tiled=options.get("tiled", True),
-                tile_size=options.get("tile_size", 256),
+                compression=output.compression or "lzw",
+                multi_zoom=output.multi_zoom if output.multi_zoom is not None else True,
+                jpeg_quality=output.jpeg_quality or 80,
+                tiled=output.tiled if output.tiled is not None else True,
+                tile_size=output.tile_size or 256,
                 attribution=final_attribution,
             )
         )
@@ -225,9 +222,9 @@ class GeoTIFFOutputHandler:
         min_zoom: int,
         max_zoom: int,
         layer_compositions: list[LayerComposition],
+        output: GeoTIFFOutput,
         progress_callback,
         attribution: str | None = None,
-        **options,
     ) -> Path:
         """Generate separate GeoTIFF files, one per layer.
 
@@ -284,11 +281,11 @@ class GeoTIFFOutputHandler:
                     min_zoom,
                     max_zoom,
                     [layer_comp],
-                    compression=options.get("compression", "lzw"),
-                    multi_zoom=options.get("multi_zoom", True),
-                    jpeg_quality=options.get("jpeg_quality", 80),
-                    tiled=options.get("tiled", True),
-                    tile_size=options.get("tile_size", 256),
+                    compression=output.compression or "lzw",
+                    multi_zoom=output.multi_zoom if output.multi_zoom is not None else True,
+                    jpeg_quality=output.jpeg_quality or 80,
+                    tiled=output.tiled if output.tiled is not None else True,
+                    tile_size=output.tile_size or 256,
                     attribution=layer_attribution,
                 )
             )
@@ -299,7 +296,7 @@ class GeoTIFFOutputHandler:
         return generated_files[0] if generated_files else output_path
 
     def estimate_tiles(
-        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], **options
+        self, extent: Extent, min_zoom: int, max_zoom: int, layer_compositions: list[LayerComposition], output: GeoTIFFOutput
     ) -> dict:
         """Estimate tile count and size for GeoTIFF output.
 
@@ -335,7 +332,7 @@ class GeoTIFFOutputHandler:
         )
 
         # Compression ratios (approximate for aerial imagery)
-        compression = options.get("compression", "lzw")
+        compression = output.compression or "lzw"
         compression_ratios = {
             "none": 1.0,  # No compression
             "lzw": 0.4,  # 40% of original
@@ -355,18 +352,14 @@ class GeoTIFFOutputHandler:
         base_size = max_zoom_tiles * compressed_tile_bytes
 
         # Add pyramid overhead if multi_zoom enabled
-        multi_zoom = options.get("multi_zoom", True)
-        if multi_zoom and min_zoom < max_zoom:
-            # Pyramids add approximately 1/3 additional size
-            # (1/4 + 1/16 + 1/64 + ... ≈ 1/3 of base size)
-            pyramid_overhead = 1.33
-        else:
-            pyramid_overhead = 1.0
+        multi_zoom = output.multi_zoom if output.multi_zoom is not None else True
+        # Pyramids add approximately 1/3 additional size (1/4 + 1/16 + 1/64 + ... ≈ 1/3 of base size)
+        pyramid_overhead = 1.33 if multi_zoom and min_zoom < max_zoom else 1.0
 
         total_size = base_size * pyramid_overhead
 
         # Account for export mode
-        export_mode = options.get("export_mode", "composite")
+        export_mode = output.export_mode or "composite"
         if export_mode == "separate":
             file_count = len(enabled_layers)
             total_size *= file_count

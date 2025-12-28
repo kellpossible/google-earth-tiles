@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel
 
 from src.models.extent import Extent
 from src.models.layer_composition import LayerComposition
+from src.models.outputs import KMZOutput
 from src.outputs import get_output_handler
 
 
@@ -139,12 +140,14 @@ class KMZOptionsWidget(QWidget):
         try:
             # Use the output handler to calculate estimates
             handler = get_output_handler("kmz")
+            # Construct output model for estimation
+            output = KMZOutput(type="kmz", path="", **self.get_options())
             estimates = handler.estimate_tiles(
                 self.extent,
                 self.min_zoom,
                 self.max_zoom,
                 enabled_layers,
-                **self.get_options(),
+                output,
             )
 
             self.tile_count_label.setText(estimates["count_label"])
