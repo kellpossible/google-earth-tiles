@@ -227,6 +227,10 @@ class KMZGenerator(BaseTileGenerator):
         from src.utils.kml_extent import KML_NS
 
         try:
+            # Register KML namespace with empty prefix (default namespace)
+            # This ensures the output uses <kml> instead of <ns0:kml>
+            ET.register_namespace("", KML_NS["kml"])
+
             # Parse the simplekml-generated KML
             tree = ET.parse(kml_path)
             root = tree.getroot()
@@ -237,14 +241,26 @@ class KMZGenerator(BaseTileGenerator):
                 logger.error("No Document element found in generated KML")
                 return
 
-            # Create a Folder for extent features
-            extent_folder = ET.SubElement(doc, f"{{{KML_NS['kml']}}}Folder")
-            name_elem = ET.SubElement(extent_folder, f"{{{KML_NS['kml']}}}name")
-            name_elem.text = "Extent Boundary"
+            # Separate styles from features
+            # Styles and StyleMaps must be at Document level, not in Folders
+            kml_ns = KML_NS["kml"]
+            style_tags = [f"{{{kml_ns}}}Style", f"{{{kml_ns}}}StyleMap"]
+            styles = [f for f in features if f.tag in style_tags]
+            placemarks_and_folders = [f for f in features if f.tag not in style_tags]
 
-            # Add all features to the folder
-            for feature in features:
-                extent_folder.append(feature)
+            # Add styles directly to Document (before other content)
+            for style in styles:
+                doc.insert(0, style)
+
+            # Create a Folder for extent features (Placemarks, etc.)
+            if placemarks_and_folders:
+                extent_folder = ET.SubElement(doc, f"{{{kml_ns}}}Folder")
+                name_elem = ET.SubElement(extent_folder, f"{{{kml_ns}}}name")
+                name_elem.text = "Extent Boundary"
+
+                # Add feature elements to the folder
+                for feature in placemarks_and_folders:
+                    extent_folder.append(feature)
 
             # Write back with XML declaration and proper formatting
             tree.write(
@@ -254,7 +270,7 @@ class KMZGenerator(BaseTileGenerator):
                 method="xml",
             )
 
-            logger.info(f"Merged {len(features)} features into KML")
+            logger.info(f"Merged {len(styles)} styles and {len(placemarks_and_folders)} features into KML")
 
         except Exception as e:
             logger.error(f"Failed to merge KML features post-save: {e}")
