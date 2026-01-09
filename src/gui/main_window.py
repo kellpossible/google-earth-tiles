@@ -74,7 +74,7 @@ class ExportWorker(QThread):
 
             for idx, output_config in enumerate(self.request.outputs, 1):
                 # Get the output handler for this type
-                handler = get_output_handler(output_config.output_type)
+                handler = get_output_handler(output_config.type)
 
                 # Update progress message
                 if len(self.request.outputs) > 1:
@@ -89,7 +89,7 @@ class ExportWorker(QThread):
 
                 # Generate output using the handler
                 result_path = handler.generate(
-                    output_path=output_config.output_path,
+                    output_path=output_config.path,
                     extent=self.request.extent,
                     min_zoom=min_zoom,
                     max_zoom=max_zoom,
@@ -98,7 +98,7 @@ class ExportWorker(QThread):
                     name=self.request.name,
                     description=self.request.description,
                     attribution=self.request.attribution,
-                    **output_config.options,
+                    output=output_config,
                 )
                 result_paths.append(result_path)
 

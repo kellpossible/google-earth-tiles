@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kellpossible/google-earth-tiles/main/schemas/config.schema.yaml
+
+extent:
+  type: latlon
+  min_lon: 140.49865722656253
+  min_lat: 42.83695429750409
+  max_lon: 140.7108306884766
+  max_lat: 42.934055561994754
+min_zoom: 12
+max_zoom: 16
+name: null
+description: null
+attribution: null
+extract_extent_metadata: false
+outputs:
+- type: kmz
+  path: niseko.kmz
+  web_compatible: false
+  merge_extent_kml: false
+layers:
+- name: std
+  opacity: 100
+  blend_mode: normal
+- name: hillshademap
+  opacity: 26
+  blend_mode: multiply
+  lod_mode: select_zooms
+  selected_zooms:
+  - 15
+  - 16
+- name: slopezone1map
+  opacity: 52
+  blend_mode: normal
+  export_mode: separate
